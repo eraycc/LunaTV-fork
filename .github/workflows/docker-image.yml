@@ -78,7 +78,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           tags: |
             ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ steps.timestamp.outputs.current_timestamp }}
-            ghcr.io/${{ steps.lowercase.outputs.other }}/lunatv:${{ github.event.inputs.tag || 'latest' }}
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ github.event.inputs.tag || 'latest' }}
           outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv,name-canonical=true,push=true
 
       - name: Export digest
@@ -94,6 +94,10 @@ jobs:
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
+
+      # 添加输出步骤来传递时间戳到merge作业
+      - name: Set timestamp output
+        run: echo "timestamp=${{ steps.timestamp.outputs.current_timestamp }}" >> $GITHUB_OUTPUT
 
   merge:
     runs-on: ubuntu-latest
@@ -121,11 +125,17 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      - name: Get timestamp from build job
+        id: get-timestamp
+        run: |
+          # 从build作业的输出中获取时间戳
+          echo "timestamp=${{ needs.build.outputs.timestamp }}" >> $GITHUB_OUTPUT
+
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
           # 推送时间戳标签
-          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ needs.build.outputs.timestamp }} \
+          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ steps.get-timestamp.outputs.timestamp }} \
             $(printf 'ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv@sha256:%s ' *)
           
           # 推送默认标签（如latest）
@@ -145,3 +155,9 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
+
+# 添加作业输出定义
+outputs:
+  timestamp:
+    description: "Build timestamp"
+    value: ${{ jobs.build.outputs.timestamp }}
