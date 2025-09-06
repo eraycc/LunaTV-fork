@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker 标签'
+        description: 'Docker 标签（可选，将使用时间戳覆盖）'
         required: false
         default: 'latest'
         type: string
@@ -43,7 +43,7 @@ jobs:
 
       - name: Generate timestamp tag
         id: timestamp
-        run: echo "current_timestamp=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+        run: echo "TIMESTAMP=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -59,15 +59,6 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv
-          tags: |
-            type=raw,value=${{ steps.timestamp.outputs.current_timestamp }}
-            type=raw,value=${{ github.event.inputs.tag || 'latest' }},enable={{is_default_branch}}
-
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v5
@@ -75,10 +66,7 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          tags: |
-            ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ steps.timestamp.outputs.current_timestamp }}
-            ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ github.event.inputs.tag || 'latest' }}
+          tags: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ env.TIMESTAMP }}
           outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv,name-canonical=true,push=true
 
       - name: Export digest
@@ -95,9 +83,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # 添加输出步骤来传递时间戳到merge作业
-      - name: Set timestamp output
-        run: echo "timestamp=${{ steps.timestamp.outputs.current_timestamp }}" >> $GITHUB_OUTPUT
+      - name: Save timestamp for merge job
+        run: echo "${{ env.TIMESTAMP }}" > /tmp/timestamp.txt
+
+      - name: Upload timestamp
+        uses: actions/upload-artifact@v4
+        with:
+          name: timestamp
+          path: /tmp/timestamp.txt
+          retention-days: 1
 
   merge:
     runs-on: ubuntu-latest
@@ -110,6 +104,16 @@ jobs:
           path: /tmp/digests
           pattern: digests-*
           merge-multiple: true
+
+      - name: Download timestamp
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp
+          name: timestamp
+
+      - name: Read timestamp
+        id: timestamp
+        run: echo "TIMESTAMP=$(cat /tmp/timestamp.txt)" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -125,21 +129,10 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Get timestamp from build job
-        id: get-timestamp
-        run: |
-          # 从build作业的输出中获取时间戳
-          echo "timestamp=${{ needs.build.outputs.timestamp }}" >> $GITHUB_OUTPUT
-
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          # 推送时间戳标签
-          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ steps.get-timestamp.outputs.timestamp }} \
-            $(printf 'ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv@sha256:%s ' *)
-          
-          # 推送默认标签（如latest）
-          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ github.event.inputs.tag || 'latest' }} \
+          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ env.TIMESTAMP }} \
             $(printf 'ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv@sha256:%s ' *)
 
   cleanup-refresh:
@@ -155,9 +148,3 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
-
-# 添加作业输出定义
-outputs:
-  timestamp:
-    description: "Build timestamp"
-    value: ${{ jobs.build.outputs.timestamp }}
