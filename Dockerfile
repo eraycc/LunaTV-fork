@@ -9,16 +9,20 @@ WORKDIR /app
 # 仅复制依赖清单，提高构建缓存利用率
 COPY package.json pnpm-lock.yaml ./
 
-# 安装所有依赖（含 devDependencies，后续会裁剪）
-RUN pnpm install --frozen-lockfile
+# 清理任何潜在的缓存并安装所有依赖
+RUN pnpm store prune && pnpm install --frozen-lockfile --no-optional
 
 # ---- 第 2 阶段：构建项目 ----
 FROM node:20-alpine AS builder
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
+# 复制package files先，确保依赖版本一致
+COPY package.json pnpm-lock.yaml ./
 # 复制依赖
 COPY --from=deps /app/node_modules ./node_modules
+# 验证依赖完整性，如果不匹配则重新安装
+RUN pnpm install --frozen-lockfile --offline || pnpm install --frozen-lockfile
 # 复制全部源代码
 COPY . .
 

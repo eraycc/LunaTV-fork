@@ -1,13 +1,69 @@
 import he from 'he';
 import Hls from 'hls.js';
 
-// 使用ArtPlayer的兼容性检测函数
-// 参考: ArtPlayer-master/packages/artplayer/src/utils/compatibility.js
+// 增强的设备检测逻辑，参考最新的设备特征
 const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
+// iOS 设备检测 (包括 iPad 的新版本检测)
 const isIOS = /iPad|iPhone|iPod/i.test(userAgent) && !(window as any).MSStream;
-const isIOS13 = isIOS || (userAgent.includes('Macintosh') && navigator.maxTouchPoints >= 1);
-const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) || isIOS13;
-const isSafari = /^(?:(?!chrome|android).)*safari/i.test(userAgent);
+const isIOS13Plus = isIOS || (
+  userAgent.includes('Macintosh') && 
+  typeof navigator !== 'undefined' && 
+  navigator.maxTouchPoints >= 1
+);
+
+// iPad 专门检测 (包括新的 iPad Pro)
+const isIPad = /iPad/i.test(userAgent) || (
+  userAgent.includes('Macintosh') && 
+  typeof navigator !== 'undefined' && 
+  navigator.maxTouchPoints > 2
+);
+
+// Android 设备检测
+const isAndroid = /Android/i.test(userAgent);
+
+// 移动设备检测 (更精确的判断)
+const isMobile = isIOS13Plus || isAndroid || /webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+
+// 平板设备检测
+const isTablet = isIPad || (isAndroid && !/Mobile/i.test(userAgent)) || 
+  (typeof screen !== 'undefined' && screen.width >= 768);
+
+// Safari 浏览器检测 (更精确)
+const isSafari = /^(?:(?!chrome|android).)*safari/i.test(userAgent) && !isAndroid;
+
+// WebKit 检测
+const isWebKit = /WebKit/i.test(userAgent);
+
+// 设备性能等级估算
+const getDevicePerformanceLevel = (): 'low' | 'medium' | 'high' => {
+  if (typeof navigator === 'undefined') return 'medium';
+  
+  // 基于硬件并发数判断
+  const cores = navigator.hardwareConcurrency || 4;
+  
+  if (isMobile) {
+    return cores >= 6 ? 'medium' : 'low';
+  } else {
+    return cores >= 8 ? 'high' : cores >= 4 ? 'medium' : 'low';
+  }
+};
+
+const devicePerformance = getDevicePerformanceLevel();
+
+// 导出设备检测结果供其他模块使用
+export {
+  isIOS,
+  isIOS13Plus,
+  isIPad,
+  isAndroid,
+  isMobile,
+  isTablet,
+  isSafari,
+  isWebKit,
+  devicePerformance,
+  getDevicePerformanceLevel
+};
 
 function getDoubanImageProxyConfig(): {
   proxyType:
@@ -120,6 +176,8 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
         video.width = 32;
         video.height = 18;
         video.style.display = 'none';
+        video.style.position = 'absolute';
+        video.style.left = '-9999px';
       }
 
       // 测量ping时间
@@ -134,15 +192,48 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
           pingTime = performance.now() - pingStart;
         });
 
-      // 移动设备使用更保守的HLS配置
-      const hls = new Hls({
+      // 基于最新 hls.js 和设备性能的智能优化配置
+      const hlsConfig = {
         debug: false,
-        enableWorker: false, // 移动设备关闭WebWorker减少内存占用
-        lowLatencyMode: false,
-        maxBufferLength: isMobile ? 2 : 10,
-        maxBufferSize: isMobile ? 1024 * 1024 : 5 * 1024 * 1024,
-        backBufferLength: 0,
-      });
+        
+        // Worker 配置 - 根据设备性能和浏览器能力
+        enableWorker: !isMobile && !isSafari && devicePerformance !== 'low',
+        
+        // 低延迟模式 - 仅在高性能非移动设备上启用
+        lowLatencyMode: !isMobile && devicePerformance === 'high',
+        
+        // 缓冲管理 - 基于设备性能分级
+        maxBufferLength: devicePerformance === 'low' ? 3 : 
+                        devicePerformance === 'medium' ? 8 : 15,
+        maxBufferSize: devicePerformance === 'low' ? 1 * 1024 * 1024 :
+                      devicePerformance === 'medium' ? 5 * 1024 * 1024 : 15 * 1024 * 1024,
+        backBufferLength: isTablet ? 20 : isMobile ? 10 : 30,
+        frontBufferFlushThreshold: devicePerformance === 'low' ? 15 : 
+                                  devicePerformance === 'medium' ? 30 : 60,
+        
+        // 自适应比特率 - 根据设备类型和性能调整
+        abrEwmaDefaultEstimate: devicePerformance === 'low' ? 1500000 :
+                               devicePerformance === 'medium' ? 3000000 : 6000000,
+        abrBandWidthFactor: 0.95,
+        abrBandWidthUpFactor: isMobile ? 0.6 : 0.7,
+        abrMaxWithRealBitrate: true,
+        maxStarvationDelay: isMobile ? 2 : 4,
+        maxLoadingDelay: isMobile ? 2 : 4,
+        
+        // 浏览器特殊优化
+        liveDurationInfinity: !isSafari,
+        progressive: false,
+        
+        // 移动设备网络优化
+        ...(isMobile && {
+          manifestLoadingRetryDelay: 2000,
+          levelLoadingRetryDelay: 2000,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3,
+        })
+      };
+
+      const hls = new Hls(hlsConfig);
 
       const timeoutDuration = isMobile ? 3000 : 4000;
       const timeout = setTimeout(() => {

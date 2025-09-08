@@ -36,11 +36,11 @@ importers:
         specifier: ^1.12.13
         version: 1.12.13(@types/react@18.3.23)(react@18.3.1)
       artplayer:
-        specifier: ^5.2.5
-        version: 5.2.5
+        specifier: ^5.3.0
+        version: 5.3.0
       artplayer-plugin-danmuku:
-        specifier: ^5.1.8
-        version: 5.1.8
+        specifier: ^5.2.0
+        version: 5.2.0
       bs58:
         specifier: ^6.0.0
         version: 6.0.0
@@ -57,8 +57,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
       hls.js:
-        specifier: ^1.6.10
-        version: 1.6.10
+        specifier: ^1.6.11
+        version: 1.6.11
       lucide-react:
         specifier: ^0.438.0
         version: 0.438.0(react@18.3.1)
@@ -2012,11 +2012,11 @@ packages:
     resolution: {integrity: sha512-3duEwti880xqi4eAMN8AyR4a0ByT90zoYdLlevfrvU43vb0YZwZVfxOgxWrLXXXpyugL0hNZc9G6BiB5B3nUug==}
     engines: {node: '>=8'}
 
-  artplayer@5.2.5:
-    resolution: {integrity: sha512-Ogym5rvkAJ4VLncM4Apl3TJ/a/ozM3csvY4IKuuMR++hUmEZgj/HaGsNonwx8r56nsqiZYE7O4vS1HFZl+NBSg==}
+  artplayer@5.3.0:
+    resolution: {integrity: sha512-yExO39MpEg4P+bxgChxx1eJfiUPE4q1QQRLCmqGhlsj+ANuaoEkR8hF93LdI5ZyrAcIbJkuEndxEiUoKobifDw==}
 
-  artplayer-plugin-danmuku@5.1.8:
-    resolution: {integrity: sha512-J9kUtU46/07ZckvmfFDwfJRJDLD7UIfrWVutc7EqDCkUModArOISifXkD27/R2ruIpfAJk6HxOfB0cQfvjbZCQ==}
+  artplayer-plugin-danmuku@5.2.0:
+    resolution: {integrity: sha512-iHHSGEc0J+gl7imX4nmLqqC7LXmv8xeGf2lUevhhyUCoiCRZplecpKQICHjErVb1Yqyp1xCy6Sp8eYN+EpFWFw==}
 
   assert@2.0.0:
     resolution: {integrity: sha512-se5Cd+js9dXJnu6Ag2JFc00t+HmHOen+8Q+L7O9zI0PqQXr20uk2J0XQqMxZEeo5U50o8Nvmmx7dZrl+Ufr35A==}
@@ -3100,8 +3100,8 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
-  hls.js@1.6.10:
-    resolution: {integrity: sha512-16XHorwFNh+hYazYxDNXBLEm5aRoU+oxMX6qVnkbGH3hJil4xLav3/M6NH92VkD1qSOGKXeSm+5unuawPXK6OQ==}
+  hls.js@1.6.11:
+    resolution: {integrity: sha512-tdDwOAgPGXohSiNE4oxGr3CI9Hx9lsGLFe6TULUvRk2TfHS+w1tSAJntrvxsHaxvjtr6BXsDZM7NOqJFhU4mmg==}
 
   hosted-git-info@2.8.9:
     resolution: {integrity: sha512-mxIDAb9Lsm6DoOJ7xH+5+X4y1LU/4Hi50L9C5sIswK3JzULS4bwk1FvjdBgvYR4bzT4tuUQiC15FE2f5HbLvYw==}
@@ -7531,11 +7531,11 @@ snapshots:
 
   arrify@2.0.1: {}
 
-  artplayer@5.2.5:
+  artplayer@5.3.0:
     dependencies:
       option-validator: 2.0.6
 
-  artplayer-plugin-danmuku@5.1.8: {}
+  artplayer-plugin-danmuku@5.2.0: {}
 
   assert@2.0.0:
     dependencies:
@@ -8799,7 +8799,7 @@ snapshots:
 
   he@1.2.0: {}
 
-  hls.js@1.6.10: {}
+  hls.js@1.6.11: {}
 
   hosted-git-info@2.8.9: {}
 

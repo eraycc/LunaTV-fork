@@ -75,6 +75,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ needs.prepare.outputs.timestamp }}
           outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv,name-canonical=true,push=true
+          no-cache: true
+          pull: true
 
       - name: Export digest
         run: |

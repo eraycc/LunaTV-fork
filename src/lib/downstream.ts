@@ -141,13 +141,33 @@ export async function searchFromApi(
 ): Promise<SearchResult[]> {
   try {
     const apiBaseUrl = apiSite.api;
-    const apiUrl =
-      apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
+    
+    // 智能搜索：生成多种查询变体
+    const searchVariants = generateSearchVariants(query);
+    let results: SearchResult[] = [];
+    let pageCountFromFirst = 0;
+    
+    // 依次尝试每种搜索变体，找到第一个有结果的就停止
+    for (const variant of searchVariants) {
+      const apiUrl =
+        apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(variant);
 
-    // 使用新的缓存搜索函数处理第一页
-    const firstPageResult = await searchWithCache(apiSite, query, 1, apiUrl, 8000);
-    const results = firstPageResult.results;
-    const pageCountFromFirst = firstPageResult.pageCount;
+      // 使用新的缓存搜索函数处理第一页
+      const firstPageResult = await searchWithCache(apiSite, variant, 1, apiUrl, 8000);
+      
+      if (firstPageResult.results.length > 0) {
+        results = firstPageResult.results;
+        pageCountFromFirst = firstPageResult.pageCount || 1;
+        // 找到结果就使用这个变体进行后续分页搜索
+        query = variant;
+        break;
+      }
+    }
+    
+    // 如果所有变体都没有结果，直接返回空数组
+    if (results.length === 0) {
+      return [];
+    }
 
     const config = await getConfig();
     const MAX_SEARCH_PAGES: number = config.SiteConfig.SearchDownstreamMaxPage;
@@ -196,6 +216,58 @@ export async function searchFromApi(
 
 // 匹配 m3u8 链接的正则
 const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
+
+/**
+ * 生成搜索查询的多种变体，提高搜索命中率
+ * @param originalQuery 原始查询
+ * @returns 按优先级排序的搜索变体数组
+ */
+function generateSearchVariants(originalQuery: string): string[] {
+  const variants: string[] = [];
+  const trimmed = originalQuery.trim();
+  
+  // 1. 原始查询（最高优先级）
+  variants.push(trimmed);
+  
+  // 如果包含空格，生成额外变体
+  if (trimmed.includes(' ')) {
+    // 2. 去除所有空格
+    const noSpaces = trimmed.replace(/\s+/g, '');
+    if (noSpaces !== trimmed) {
+      variants.push(noSpaces);
+    }
+    
+    // 3. 标准化空格（多个空格合并为一个）
+    const normalizedSpaces = trimmed.replace(/\s+/g, ' ');
+    if (normalizedSpaces !== trimmed && !variants.includes(normalizedSpaces)) {
+      variants.push(normalizedSpaces);
+    }
+    
+    // 4. 提取关键词组合（针对"中餐厅 第九季"这种情况）
+    const keywords = trimmed.split(/\s+/);
+    if (keywords.length >= 2) {
+      // 主要关键词 + 季/集等后缀
+      const mainKeyword = keywords[0];
+      const lastKeyword = keywords[keywords.length - 1];
+      
+      // 如果最后一个词包含"第"、"季"、"集"等，尝试组合
+      if (/第|季|集|部|篇|章/.test(lastKeyword)) {
+        const combined = mainKeyword + lastKeyword;
+        if (!variants.includes(combined)) {
+          variants.push(combined);
+        }
+      }
+      
+      // 仅使用主关键词搜索
+      if (!variants.includes(mainKeyword)) {
+        variants.push(mainKeyword);
+      }
+    }
+  }
+  
+  // 去重并返回
+  return Array.from(new Set(variants));
+}
 
 export async function getDetailFromApi(
   apiSite: ApiSite,

@@ -4,7 +4,6 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 
-import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart, Radio, Search, Tv, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -12,6 +11,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   debounce,
 } from '@/lib/channel-search';
+import {
+  isMobile,
+  isTablet, 
+  isSafari,
+  devicePerformance
+} from '@/lib/utils';
 import {
   deleteFavorite,
   generateStorageKey,
@@ -861,15 +866,74 @@ function LivePageClient() {
       }
     }
 
-    const hls = new Hls({
+    // 基于最新 hls.js 源码和设备性能的智能配置
+    const hlsConfig = {
       debug: false,
-      enableWorker: true,
-      lowLatencyMode: true,
-      maxBufferLength: 30,
-      backBufferLength: 30,
-      maxBufferSize: 60 * 1000 * 1000,
+      
+      // Worker 配置 - 根据设备性能和浏览器能力
+      enableWorker: !isMobile && !isSafari && devicePerformance !== 'low',
+      
+      // 低延迟模式 - 仅在高性能非移动设备上启用 (源码默认为true)
+      lowLatencyMode: !isMobile && devicePerformance === 'high',
+      
+      // 缓冲管理优化 - 参考 hls.js 源码默认值进行设备优化
+      backBufferLength: devicePerformance === 'low' ? 30 : Infinity, // 源码默认 Infinity
+      maxBufferLength: devicePerformance === 'low' ? 20 :
+                      devicePerformance === 'medium' ? 30 : 30, // 源码默认 30
+      maxBufferSize: devicePerformance === 'low' ? 30 * 1000 * 1000 :
+                    devicePerformance === 'medium' ? 60 * 1000 * 1000 : 60 * 1000 * 1000, // 源码默认 60MB
+      maxBufferHole: 0.1, // 源码默认值，允许小的缓冲区空洞
+      
+      // Gap Controller 配置 - 缓冲区空洞处理 (源码中的默认值)
+      nudgeOffset: 0.1,   // 跳过小间隙的偏移量
+      nudgeMaxRetry: 3,   // 最大重试次数 (源码默认)
+      
+      // 自适应比特率优化 - 参考源码默认值
+      abrEwmaDefaultEstimate: devicePerformance === 'low' ? 500000 :
+                             devicePerformance === 'medium' ? 500000 : 500000, // 源码默认 500k
+      abrBandWidthFactor: 0.95, // 源码默认
+      abrBandWidthUpFactor: 0.7, // 源码默认
+      abrMaxWithRealBitrate: false, // 源码默认
+      maxStarvationDelay: 4, // 源码默认
+      maxLoadingDelay: 4, // 源码默认
+      
+      // 直播流特殊配置
+      startLevel: undefined, // 源码默认，自动选择起始质量
+      capLevelToPlayerSize: false, // 源码默认
+      
+      // 渐进式加载 (直播流建议关闭)
+      progressive: false,
+      
+      // 浏览器特殊优化
+      liveDurationInfinity: false, // 源码默认，Safari兼容
+      
+      // 移动设备网络优化 - 使用新的LoadPolicy配置
+      ...(isMobile && {
+        // 使用 fragLoadPolicy 替代旧的配置方式
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 8000,
+            maxLoadTimeMs: 20000,
+            timeoutRetry: {
+              maxNumRetry: 2,
+              retryDelayMs: 1000,
+              maxRetryDelayMs: 8000,
+              backoff: 'linear' as const
+            },
+            errorRetry: {
+              maxNumRetry: 3,
+              retryDelayMs: 1000,
+              maxRetryDelayMs: 8000,
+              backoff: 'linear' as const
+            }
+          }
+        }
+      }),
+      
       loader: CustomHlsJsLoader,
-    });
+    };
+
+    const hls = new Hls(hlsConfig);
 
     hls.loadSource(url);
     hls.attachMedia(video);
@@ -878,8 +942,8 @@ function LivePageClient() {
     hls.on(Hls.Events.ERROR, function (event: any, data: any) {
       console.error('HLS Error:', event, data);
 
-      // 特殊处理keyLoadError - 防止无限重试导致页面卡住
-      if (data.details === 'keyLoadError') {
+      // 使用最新版本的错误详情类型
+      if (data.details === Hls.ErrorDetails.KEY_LOAD_ERROR) {
         const currentTime = Date.now();
         
         // 重置计数器（如果距离上次错误超过10秒）
@@ -901,7 +965,25 @@ function LivePageClient() {
           return;
         }
         
-        // 前几次错误仍然尝试重新加载，但不做fatal处理
+        // 使用指数退避重试策略
+        if (keyLoadErrorCount <= 2) {
+          setTimeout(() => {
+            try {
+              hls.startLoad();
+            } catch (e) {
+              console.warn('Failed to restart load after key error:', e);
+            }
+          }, 1000 * keyLoadErrorCount);
+        }
+        return;
+      }
+
+      // 处理其他特定错误类型
+      if (data.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR) {
+        console.error('Incompatible codecs error - fatal');
+        setUnsupportedType('codec-incompatible');
+        setIsVideoLoading(false);
+        hls.destroy();
         return;
       }
 
@@ -909,34 +991,97 @@ function LivePageClient() {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
             console.log('Network error, attempting to recover...');
-            try {
-              hls.startLoad();
-            } catch (e) {
-              console.error('Failed to restart after network error:', e);
+            
+            // 根据具体的网络错误类型进行处理
+            if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
+              console.log('Manifest load error, attempting reload...');
+              setTimeout(() => {
+                try {
+                  hls.loadSource(url);
+                } catch (e) {
+                  console.error('Failed to reload source:', e);
+                }
+              }, 2000);
+            } else {
+              try {
+                hls.startLoad();
+              } catch (e) {
+                console.error('Failed to restart after network error:', e);
+              }
             }
             break;
+            
           case Hls.ErrorTypes.MEDIA_ERROR:
             console.log('Media error, attempting to recover...');
             try {
               hls.recoverMediaError();
             } catch (e) {
-              console.error('Failed to recover from media error:', e);
+              console.error('Failed to recover from media error, trying audio codec swap:', e);
+              try {
+                // 使用音频编解码器交换作为备选方案
+                hls.swapAudioCodec();
+                hls.recoverMediaError();
+              } catch (swapError) {
+                console.error('Audio codec swap also failed:', swapError);
+                setUnsupportedType('media-error');
+                setIsVideoLoading(false);
+              }
             }
             break;
+            
           default:
             console.log('Fatal error, destroying HLS instance');
+            setUnsupportedType('fatal-error');
+            setIsVideoLoading(false);
             hls.destroy();
             break;
         }
       }
     });
+
+    // 添加性能监控和缓冲管理事件
+    hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+      if (data.frag.stats && data.frag.stats.loading && data.frag.stats.loaded) {
+        const loadTime = data.frag.stats.loading.end - data.frag.stats.loading.start;
+        if (loadTime > 0 && data.frag.stats.loaded > 0) {
+          const throughputBps = (data.frag.stats.loaded * 8 * 1000) / loadTime; // bits per second
+          const throughputMbps = throughputBps / 1000000;
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Fragment loaded: ${loadTime.toFixed(2)}ms, size: ${data.frag.stats.loaded}B, throughput: ${throughputMbps.toFixed(2)} Mbps`);
+          }
+        }
+      }
+    });
+
+    // 监听缓冲区卡顿和自动恢复
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+        console.warn('Buffer stalled, attempting recovery...');
+        // 不做任何操作，让 HLS.js 自动处理
+      } else if (data.details === Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE) {
+        console.warn('Buffer hole detected, HLS.js will handle seeking...');
+        // 不做任何操作，让 HLS.js 自动跳过空洞
+      }
+    });
+
+    // 监听质量切换
+    hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Quality switched to level ${data.level}`);
+      }
+    });
+
+    // 监听缓冲区清理事件
+    hls.on(Hls.Events.BUFFER_FLUSHED, (event, data) => {
+      console.log('Buffer flushed:', data);
+    });
   }
 
   // 播放器初始化
   useEffect(() => {
-    const preload = async () => {
+    // 异步初始化播放器，避免SSR问题
+    const initPlayer = async () => {
       if (
-        !Artplayer ||
         !Hls ||
         !videoUrl ||
         !artRef.current ||
@@ -952,32 +1097,18 @@ function LivePageClient() {
         cleanupPlayer();
       }
 
-      // precheck type
-      let type = 'm3u8';
-      const precheckUrl = `/api/live/precheck?url=${encodeURIComponent(videoUrl)}&moontv-source=${currentSourceRef.current?.key || ''}`;
-      const precheckResponse = await fetch(precheckUrl);
-      if (!precheckResponse.ok) {
-        console.error('预检查失败:', precheckResponse.statusText);
-        return;
-      }
-      const precheckResult = await precheckResponse.json();
-      if (precheckResult.success) {
-        type = precheckResult.type;
-      }
-
-      // 如果不是 m3u8 类型，设置不支持的类型并返回
-      if (type !== 'm3u8') {
-        setUnsupportedType(type);
-        setIsVideoLoading(false);
-        return;
-      }
-
+      // 根据hls.js源码设计，直接让hls.js处理各种媒体类型和错误
+      // 不需要预检查，hls.js会在加载时自动检测和处理
+      
       // 重置不支持的类型
       setUnsupportedType(null);
 
       const customType = { m3u8: m3u8Loader };
       const targetUrl = `/api/proxy/m3u8?url=${encodeURIComponent(videoUrl)}&moontv-source=${currentSourceRef.current?.key || ''}`;
       try {
+        // 使用动态导入的 Artplayer
+        const Artplayer = (window as any).DynamicArtplayer;
+        
         // 创建新的播放器实例
         Artplayer.USE_RAF = true;
 
@@ -1016,7 +1147,7 @@ function LivePageClient() {
             crossOrigin: 'anonymous',
             preload: 'metadata',
           },
-          type: type,
+          type: 'm3u8',
           customType: customType,
           icons: {
             loading:
@@ -1062,9 +1193,25 @@ function LivePageClient() {
         console.error('创建播放器失败:', err);
         // 不设置错误，只记录日志
       }
-    }
-    preload();
-  }, [Artplayer, Hls, videoUrl, currentChannel, loading]);
+    }; // 结束 initPlayer 函数
+
+    // 动态导入 ArtPlayer 并初始化
+    const loadAndInit = async () => {
+      try {
+        const { default: Artplayer } = await import('artplayer');
+        
+        // 将导入的模块设置为全局变量供 initPlayer 使用
+        (window as any).DynamicArtplayer = Artplayer;
+        
+        await initPlayer();
+      } catch (error) {
+        console.error('动态导入 ArtPlayer 失败:', error);
+        // 不设置错误，只记录日志
+      }
+    };
+
+    loadAndInit();
+  }, [Hls, videoUrl, currentChannel, loading]);
 
   // 清理播放器资源
   useEffect(() => {
