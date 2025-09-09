@@ -62,6 +62,14 @@ export interface AdminConfig {
     timeout: number;                     // 请求超时时间(秒)
     enabledCloudTypes: string[];         // 启用的网盘类型
   };
+  AIRecommendConfig?: {
+    enabled: boolean;                    // 是否启用AI推荐功能
+    apiUrl: string;                      // OpenAI兼容API地址
+    apiKey: string;                      // API密钥
+    model: string;                       // 模型名称
+    temperature: number;                 // 温度参数 0-2
+    maxTokens: number;                   // 最大token数
+  };
 }
 
 export interface AdminConfigResult {

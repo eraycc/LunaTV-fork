@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   AlertCircle,
   AlertTriangle,
+  Brain,
   Check,
   CheckCircle,
   ChevronDown,
@@ -44,6 +45,7 @@ import { createPortal } from 'react-dom';
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
+import AIRecommendConfig from '@/components/AIRecommendConfig';
 import CacheManager from '@/components/CacheManager';
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
@@ -4825,6 +4827,7 @@ function AdminPageClient() {
     siteConfig: false,
     categoryConfig: false,
     netdiskConfig: false,
+    aiRecommendConfig: false,
     configFile: false,
     cacheManager: false,
     dataMigration: false,
@@ -5041,6 +5044,21 @@ function AdminPageClient() {
               onToggle={() => toggleTab('netdiskConfig')}
             >
               <NetDiskConfig config={config} refreshConfig={fetchConfig} />
+            </CollapsibleTab>
+
+            {/* AI推荐配置标签 */}
+            <CollapsibleTab
+              title='AI推荐配置'
+              icon={
+                <Brain
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.aiRecommendConfig}
+              onToggle={() => toggleTab('aiRecommendConfig')}
+            >
+              <AIRecommendConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 缓存管理标签 - 仅站长可见 */}

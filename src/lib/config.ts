@@ -351,6 +351,18 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
     };
   }
 
+  // 确保AI推荐配置有默认值
+  if (!adminConfig.AIRecommendConfig) {
+    adminConfig.AIRecommendConfig = {
+      enabled: false,                                   // 默认关闭
+      apiUrl: 'https://api.openai.com/v1',             // 默认OpenAI API
+      apiKey: '',                                       // 默认为空，需要管理员配置
+      model: 'gpt-3.5-turbo',                          // 默认模型
+      temperature: 0.7,                                // 默认温度
+      maxTokens: 1000                                  // 默认最大token数
+    };
+  }
+
   // 站长变更自检
   const ownerUser = process.env.USERNAME;
 
