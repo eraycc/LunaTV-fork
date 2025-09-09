@@ -195,18 +195,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
     setInputMessage('');
   };
 
-  // 更新消息容器中的可点击链接
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      // 添加轻微延迟确保DOM已更新
-      const timer = setTimeout(() => {
-        if (messagesContainerRef.current) {
-          addMovieTitleClickListeners(messagesContainerRef.current, handleTitleClick);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [messages]);
+  // 不再需要为消息内容添加点击监听器，因为点击功能已移至右侧卡片
 
   if (!isOpen) return null;
 
@@ -312,11 +301,25 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
               {/* 推荐影片卡片 */}
               {message.role === 'assistant' && message.recommendations && message.recommendations.length > 0 && (
                 <div className="mt-3 space-y-2 max-w-[80%]">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full text-xs font-medium mr-2">
+                        🎬 点击搜索
+                      </span>
+                      推荐影片卡片
+                    </div>
+                    <span className="text-gray-400 dark:text-gray-500">
+                      {message.recommendations.length < 4 
+                        ? `显示 ${message.recommendations.length} 个推荐`
+                        : `显示前 4 个推荐`
+                      }
+                    </span>
+                  </div>
                   {message.recommendations.map((movie, index) => (
                     <div
                       key={index}
                       onClick={() => handleMovieSelect(movie)}
-                      className="p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all"
+                      className="p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 hover:scale-[1.02] transition-all group"
                     >
                       <div className="flex items-start gap-3">
                         {movie.poster && (
@@ -327,11 +330,14 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
                           />
                         )}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-gray-900 dark:text-white text-sm">
+                          <h4 className="font-medium text-gray-900 dark:text-white text-sm flex items-center">
                             {movie.title}
                             {movie.year && (
                               <span className="text-gray-500 dark:text-gray-400 ml-1">({movie.year})</span>
                             )}
+                            <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 text-xs">
+                              🔍 搜索
+                            </span>
                           </h4>
                           {movie.genre && (
                             <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{movie.genre}</p>
@@ -421,7 +427,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
           
           {/* 提示信息 */}
           <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-            <span>💡 推荐的影片名称可以点击直接搜索</span>
+            <span>💡 点击右侧影片卡片可直接搜索</span>
             <span>按 Enter 发送，Shift+Enter 换行</span>
           </div>
         </div>

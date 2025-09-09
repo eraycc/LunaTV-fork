@@ -441,11 +441,11 @@ function SearchPageClient() {
   useEffect(() => {
     if (searchType === 'netdisk' && showResults) {
       const currentQuery = searchQuery.trim() || searchParams.get('q');
-      if (currentQuery && !netdiskLoading && !netdiskResults) {
+      if (currentQuery && !netdiskLoading && !netdiskResults && !netdiskError) {
         handleNetDiskSearch(currentQuery);
       }
     }
-  }, [searchType, showResults, searchQuery, searchParams, netdiskLoading, netdiskResults]);
+  }, [searchType, showResults, searchQuery, searchParams, netdiskLoading, netdiskResults, netdiskError]);
 
   useEffect(() => {
     // 当搜索参数变化时更新搜索状态
@@ -656,10 +656,12 @@ function SearchPageClient() {
       const response = await fetch(`/api/netdisk/search?q=${encodeURIComponent(query.trim())}`);
       const data = await response.json();
 
-      if (data.success) {
+      // 检查响应状态和success字段
+      if (response.ok && data.success) {
         setNetdiskResults(data.data.merged_by_type || {});
         setNetdiskTotal(data.data.total || 0);
       } else {
+        // 处理错误情况（包括功能关闭、配置错误等）
         setNetdiskError(data.error || '网盘搜索失败');
       }
     } catch (error: any) {
@@ -731,17 +733,15 @@ function SearchPageClient() {
                   type='button'
                   onClick={() => {
                     setSearchType('video');
-                    // 如果当前有结果且是网盘搜索结果，清空结果
-                    if (showResults && netdiskResults) {
-                      setNetdiskResults(null);
-                      setNetdiskError(null);
-                      setNetdiskTotal(0);
-                      // 如果有搜索词，触发影视搜索
-                      const currentQuery = searchQuery.trim() || searchParams?.get('q');
-                      if (currentQuery) {
-                        setIsLoading(true);
-                        router.push(`/search?q=${encodeURIComponent(currentQuery)}`);
-                      }
+                    // 切换到影视搜索时，总是清除网盘搜索状态
+                    setNetdiskResults(null);
+                    setNetdiskError(null);
+                    setNetdiskTotal(0);
+                    // 如果有搜索词且当前显示结果，触发影视搜索
+                    const currentQuery = searchQuery.trim() || searchParams?.get('q');
+                    if (currentQuery && showResults) {
+                      setIsLoading(true);
+                      router.push(`/search?q=${encodeURIComponent(currentQuery)}`);
                     }
                   }}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -756,6 +756,9 @@ function SearchPageClient() {
                   type='button'
                   onClick={() => {
                     setSearchType('netdisk');
+                    // 清除之前的网盘搜索状态，确保重新开始
+                    setNetdiskError(null);
+                    setNetdiskResults(null);
                     // 如果当前有搜索词，立即触发网盘搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
                     if (currentQuery && showResults) {

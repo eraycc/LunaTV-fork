@@ -70,6 +70,14 @@ export interface AdminConfig {
     temperature: number;                 // 温度参数 0-2
     maxTokens: number;                   // 最大token数
   };
+  TVBoxSecurityConfig?: {
+    enableAuth: boolean;                 // 是否启用Token验证
+    token: string;                       // 访问Token
+    enableIpWhitelist: boolean;          // 是否启用IP白名单
+    allowedIPs: string[];               // 允许的IP地址列表
+    enableRateLimit: boolean;            // 是否启用频率限制
+    rateLimit: number;                   // 每分钟允许的请求次数
+  };
 }
 
 export interface AdminConfigResult {

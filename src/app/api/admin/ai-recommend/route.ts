@@ -56,11 +56,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '最大Token数应在1-150000之间（GPT-5支持128k，推理模型建议2000+）' }, { status: 400 });
       }
 
-      // 验证API地址格式
+      // 验证和优化API地址格式
       try {
-        new URL(aiRecommendConfig.apiUrl);
+        const apiUrl = aiRecommendConfig.apiUrl.trim();
+        
+        // 验证URL格式
+        new URL(apiUrl);
+        
+        // 智能提示：检查是否可能缺少/v1后缀
+        if (!apiUrl.endsWith('/v1') && 
+            !apiUrl.includes('/chat/completions') && 
+            !apiUrl.includes('/api/paas/v4') && // 智谱AI例外
+            !apiUrl.includes('/compatible-mode/v1') && // 通义千问例外
+            !apiUrl.includes('/rpc/2.0/ai_custom/v1')) { // 百度文心例外
+          
+          // 记录可能的配置问题，但不阻止保存
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`API地址可能缺少/v1后缀: ${apiUrl}`);
+          }
+        }
+        
       } catch (error) {
-        return NextResponse.json({ error: 'API地址格式不正确' }, { status: 400 });
+        return NextResponse.json({ 
+          error: 'API地址格式不正确',
+          hint: '请输入完整的API地址，如 https://api.openai.com/v1'
+        }, { status: 400 });
       }
     }
 
