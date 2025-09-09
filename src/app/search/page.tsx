@@ -20,6 +20,7 @@ import SearchSuggestions from '@/components/SearchSuggestions';
 import VideoCard, { VideoCardHandle } from '@/components/VideoCard';
 import VirtualSearchGrid from '@/components/VirtualSearchGrid';
 import NetDiskSearchResults from '@/components/NetDiskSearchResults';
+import YouTubeVideoCard from '@/components/YouTubeVideoCard';
 
 function SearchPageClient() {
   // 搜索历史
@@ -51,11 +52,16 @@ function SearchPageClient() {
   });
 
   // 网盘搜索相关状态
-  const [searchType, setSearchType] = useState<'video' | 'netdisk'>('video');
+  const [searchType, setSearchType] = useState<'video' | 'netdisk' | 'youtube'>('video');
   const [netdiskResults, setNetdiskResults] = useState<{ [key: string]: any[] } | null>(null);
   const [netdiskLoading, setNetdiskLoading] = useState(false);
   const [netdiskError, setNetdiskError] = useState<string | null>(null);
   const [netdiskTotal, setNetdiskTotal] = useState(0);
+  
+  // YouTube搜索相关状态
+  const [youtubeResults, setYoutubeResults] = useState<any[] | null>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
   // 聚合卡片 refs 与聚合统计缓存
   const groupRefs = useRef<Map<string, React.RefObject<VideoCardHandle>>>(new Map());
   const groupStatsRef = useRef<Map<string, { douban_id?: number; episodes?: number; source_names: string[] }>>(new Map());
@@ -437,15 +443,19 @@ function SearchPageClient() {
     };
   }, []);
 
-  // 监听搜索类型变化，如果切换到网盘搜索且有搜索词，立即搜索
+  // 监听搜索类型变化，如果切换到网盘/YouTube搜索且有搜索词，立即搜索
   useEffect(() => {
-    if (searchType === 'netdisk' && showResults) {
+    if ((searchType === 'netdisk' || searchType === 'youtube') && showResults) {
       const currentQuery = searchQuery.trim() || searchParams.get('q');
-      if (currentQuery && !netdiskLoading && !netdiskResults && !netdiskError) {
-        handleNetDiskSearch(currentQuery);
+      if (currentQuery) {
+        if (searchType === 'netdisk' && !netdiskLoading && !netdiskResults && !netdiskError) {
+          handleNetDiskSearch(currentQuery);
+        } else if (searchType === 'youtube' && !youtubeLoading && !youtubeResults && !youtubeError) {
+          handleYouTubeSearch(currentQuery);
+        }
       }
     }
-  }, [searchType, showResults, searchQuery, searchParams, netdiskLoading, netdiskResults, netdiskError]);
+  }, [searchType, showResults, searchQuery, searchParams, netdiskLoading, netdiskResults, netdiskError, youtubeLoading, youtubeResults, youtubeError]);
 
   useEffect(() => {
     // 当搜索参数变化时更新搜索状态
@@ -642,7 +652,31 @@ function SearchPageClient() {
     }
   };
 
-  // 搜索表单提交时触发，处理搜索逻辑
+  // YouTube搜索函数
+  const handleYouTubeSearch = async (query: string) => {
+    if (!query.trim()) return;
+
+    setYoutubeLoading(true);
+    setYoutubeError(null);
+    setYoutubeResults(null);
+
+    try {
+      const response = await fetch(`/api/youtube/search?q=${encodeURIComponent(query.trim())}`);
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setYoutubeResults(data.videos || []);
+      } else {
+        setYoutubeError(data.error || 'YouTube搜索失败');
+      }
+    } catch (error: any) {
+      console.error('YouTube搜索请求失败:', error);
+      setYoutubeError('YouTube搜索请求失败，请稍后重试');
+    } finally {
+      setYoutubeLoading(false);
+    }
+  };
+
   // 网盘搜索函数
   const handleNetDiskSearch = async (query: string) => {
     if (!query.trim()) return;
@@ -686,6 +720,10 @@ function SearchPageClient() {
       // 网盘搜索 - 也更新URL保持一致性
       router.push(`/search?q=${encodeURIComponent(trimmed)}`);
       handleNetDiskSearch(trimmed);
+    } else if (searchType === 'youtube') {
+      // YouTube搜索
+      router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+      handleYouTubeSearch(trimmed);
     } else {
       // 原有的影视搜索逻辑
       setIsLoading(true);
@@ -733,10 +771,12 @@ function SearchPageClient() {
                   type='button'
                   onClick={() => {
                     setSearchType('video');
-                    // 切换到影视搜索时，总是清除网盘搜索状态
+                    // 切换到影视搜索时，清除网盘和YouTube搜索状态
                     setNetdiskResults(null);
                     setNetdiskError(null);
                     setNetdiskTotal(0);
+                    setYoutubeResults(null);
+                    setYoutubeError(null);
                     // 如果有搜索词且当前显示结果，触发影视搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
                     if (currentQuery && showResults) {
@@ -759,6 +799,8 @@ function SearchPageClient() {
                     // 清除之前的网盘搜索状态，确保重新开始
                     setNetdiskError(null);
                     setNetdiskResults(null);
+                    setYoutubeResults(null);
+                    setYoutubeError(null);
                     // 如果当前有搜索词，立即触发网盘搜索
                     const currentQuery = searchQuery.trim() || searchParams?.get('q');
                     if (currentQuery && showResults) {
@@ -773,6 +815,32 @@ function SearchPageClient() {
                 >
                   💾 网盘资源
                 </button>
+                <button
+                  type='button'
+                  onClick={() => {
+                    const wasAlreadyYoutube = searchType === 'youtube';
+                    setSearchType('youtube');
+                    // 清除之前的YouTube搜索状态，确保重新开始
+                    setYoutubeError(null);
+                    setYoutubeResults(null);
+                    setNetdiskResults(null);
+                    setNetdiskError(null);
+                    setNetdiskTotal(0);
+                    // 如果当前有搜索词，立即触发YouTube搜索
+                    const currentQuery = searchQuery.trim() || searchParams?.get('q');
+                    if (currentQuery && showResults) {
+                      // 如果已经在YouTube标签，或者是新切换，都强制重新搜索
+                      setTimeout(() => handleYouTubeSearch(currentQuery), 0);
+                    }
+                  }}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    searchType === 'youtube'
+                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  📺 YouTube
+                </button>
               </div>
             </div>
           </div>
@@ -786,7 +854,7 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={handleInputChange}
                 onFocus={handleInputFocus}
-                placeholder={searchType === 'video' ? '搜索电影、电视剧...' : '搜索网盘资源...'}
+                placeholder={searchType === 'video' ? '搜索电影、电视剧...' : searchType === 'netdisk' ? '搜索网盘资源...' : '搜索YouTube视频...'}
                 autoComplete="off"
                 className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-12 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
               />
@@ -854,6 +922,46 @@ function SearchPageClient() {
                     error={netdiskError}
                     total={netdiskTotal}
                   />
+                </>
+              ) : searchType === 'youtube' ? (
+                /* YouTube搜索结果 */
+                <>
+                  <div className='mb-4'>
+                    <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                      YouTube搜索结果
+                      {youtubeLoading && (
+                        <span className='ml-2 inline-block align-middle'>
+                          <span className='inline-block h-3 w-3 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin'></span>
+                        </span>
+                      )}
+                    </h2>
+                  </div>
+                  {youtubeError ? (
+                    <div className='text-center py-8'>
+                      <div className='text-red-500 mb-2'>{youtubeError}</div>
+                      <button
+                        onClick={() => {
+                          const currentQuery = searchQuery.trim() || searchParams?.get('q');
+                          if (currentQuery) {
+                            handleYouTubeSearch(currentQuery);
+                          }
+                        }}
+                        className='px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors'
+                      >
+                        重试
+                      </button>
+                    </div>
+                  ) : youtubeResults && youtubeResults.length > 0 ? (
+                    <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+                      {youtubeResults.map((video, index) => (
+                        <YouTubeVideoCard key={video.videoId || index} video={video} />
+                      ))}
+                    </div>
+                  ) : !youtubeLoading ? (
+                    <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
+                      未找到相关YouTube视频
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 /* 原有的影视搜索结果 */

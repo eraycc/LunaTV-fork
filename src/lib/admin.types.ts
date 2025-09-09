@@ -70,6 +70,14 @@ export interface AdminConfig {
     temperature: number;                 // 温度参数 0-2
     maxTokens: number;                   // 最大token数
   };
+  YouTubeConfig?: {
+    enabled: boolean;                    // 是否启用YouTube搜索功能
+    apiKey: string;                      // YouTube Data API v3密钥
+    enableDemo: boolean;                 // 是否启用演示模式
+    maxResults: number;                  // 每页最大搜索结果数
+    enabledRegions: string[];            // 启用的地区代码列表
+    enabledCategories: string[];         // 启用的视频分类列表
+  };
   TVBoxSecurityConfig?: {
     enableAuth: boolean;                 // 是否启用Token验证
     token: string;                       // 访问Token

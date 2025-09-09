@@ -37,7 +37,15 @@ export async function POST(request: NextRequest) {
     if (!aiConfig?.enabled) {
       return NextResponse.json({ 
         error: 'AI推荐功能未启用' 
-      }, { status: 403 });
+      }, { 
+        status: 403,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Expires': '0',
+          'Pragma': 'no-cache',
+          'Surrogate-Control': 'no-store'
+        }
+      });
     }
 
     // 检查API配置是否完整
