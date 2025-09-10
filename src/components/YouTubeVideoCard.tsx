@@ -57,7 +57,7 @@ const YouTubeVideoCard = ({ video }: YouTubeVideoCardProps) => {
         {isPlaying ? (
           <div className="w-full h-full">
             <iframe
-              src={`https://www.youtube.com/embed/${video.id.videoId}?autoplay=1&rel=0`}
+              src={`https://www.youtube-nocookie.com/embed/${video.id.videoId}?autoplay=1&rel=0`}
               className="w-full h-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen

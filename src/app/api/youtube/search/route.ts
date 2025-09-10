@@ -9,6 +9,29 @@ export const runtime = 'nodejs';
 // YouTube Data API v3 配置
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
+// 内容类型到搜索关键词的映射
+const getContentTypeQuery = (originalQuery: string, contentType: string): string => {
+  if (contentType === 'all') return originalQuery;
+  
+  const typeKeywords = {
+    music: ['music', 'song', 'audio', 'MV', 'cover', 'live'],
+    movie: ['movie', 'film', 'trailer', 'cinema', 'full movie'],
+    educational: ['tutorial', 'education', 'learn', 'how to', 'guide', 'course'],
+    gaming: ['gaming', 'gameplay', 'game', 'walkthrough', 'review'],
+    sports: ['sports', 'football', 'basketball', 'soccer', 'match', 'game'],
+    news: ['news', 'breaking', 'report', 'today', 'latest']
+  };
+  
+  const keywords = typeKeywords[contentType as keyof typeof typeKeywords] || [];
+  if (keywords.length > 0) {
+    // 随机选择一个关键词添加到搜索中
+    const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+    return `${originalQuery} ${randomKeyword}`;
+  }
+  
+  return originalQuery;
+};
+
 // 模拟搜索数据（当没有真实API Key时使用）
 const mockSearchResults = [
   {
@@ -89,6 +112,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
+  const contentType = searchParams.get('contentType') || 'all';
+  const order = searchParams.get('order') || 'relevance';
   
   if (!query) {
     return NextResponse.json({ error: '搜索关键词不能为空' }, { status: 400 });
@@ -119,10 +144,10 @@ export async function GET(request: NextRequest) {
 
     // YouTube搜索缓存：60分钟（因为YouTube内容更新频率相对较低）
     const YOUTUBE_CACHE_TIME = 60 * 60; // 60分钟（秒）
-    const enabledRegionsStr = (youtubeConfig.enabledRegions || []).sort().join(',');
-    const enabledCategoriesStr = (youtubeConfig.enabledCategories || []).sort().join(',');
-    // 缓存key包含功能状态、演示模式、最大结果数，确保配置变化时缓存隔离
-    const cacheKey = `youtube-search-${youtubeConfig.enabled}-${youtubeConfig.enableDemo}-${maxResults}-${query}-${enabledRegionsStr}-${enabledCategoriesStr}`;
+    const enabledRegionsStr = (youtubeConfig.enabledRegions || []).sort().join(',') || 'none';
+    const enabledCategoriesStr = (youtubeConfig.enabledCategories || []).sort().join(',') || 'none';
+    // 缓存key包含功能状态、演示模式、最大结果数、内容类型、排序，确保配置变化时缓存隔离
+    const cacheKey = `youtube-search-${youtubeConfig.enabled}-${youtubeConfig.enableDemo}-${maxResults}-${encodeURIComponent(query)}-${contentType}-${order}-${enabledRegionsStr}-${enabledCategoriesStr}`;
     
     console.log(`🔍 检查YouTube搜索缓存: ${cacheKey}`);
     
@@ -147,7 +172,31 @@ export async function GET(request: NextRequest) {
 
     // 如果启用演示模式或没有配置API Key，返回模拟数据
     if (youtubeConfig.enableDemo || !youtubeConfig.apiKey) {
-      const filteredResults = mockSearchResults.slice(0, maxResults).map(video => ({
+      // 根据内容类型过滤模拟结果
+      let filteredResults = [...mockSearchResults];
+      
+      if (contentType !== 'all') {
+        // 简单的内容类型过滤逻辑（基于标题关键词）
+        const typeFilters = {
+          music: ['music', 'song', 'MV', 'audio'],
+          movie: ['movie', 'film', 'video'],
+          educational: ['tutorial', 'guide', 'how'],
+          gaming: ['game', 'gaming'],
+          sports: ['sports', 'match'],
+          news: ['news', 'report']
+        };
+        
+        const filterKeywords = typeFilters[contentType as keyof typeof typeFilters] || [];
+        if (filterKeywords.length > 0) {
+          filteredResults = filteredResults.filter(video => 
+            filterKeywords.some(keyword => 
+              video.snippet.title.toLowerCase().includes(keyword)
+            )
+          );
+        }
+      }
+      
+      const finalResults = filteredResults.slice(0, maxResults).map(video => ({
         ...video,
         snippet: {
           ...video.snippet,
@@ -157,10 +206,11 @@ export async function GET(request: NextRequest) {
       
       const responseData = {
         success: true,
-        videos: filteredResults,
-        total: filteredResults.length,
+        videos: finalResults,
+        total: finalResults.length,
         query: query,
-        source: 'demo'
+        source: 'demo',
+        warning: youtubeConfig.enableDemo ? '当前为演示模式，显示模拟数据' : 'API Key未配置，显示模拟数据。请在管理后台配置YouTube API Key以获取真实搜索结果'
       };
 
       // 服务端直接保存到数据库（不用ClientCache，避免HTTP循环调用）
@@ -175,18 +225,64 @@ export async function GET(request: NextRequest) {
     }
 
     // 使用真实的YouTube API
+    const enhancedQuery = getContentTypeQuery(query.trim(), contentType);
     const searchUrl = `${YOUTUBE_API_BASE}/search?` +
       `key=${youtubeConfig.apiKey}&` +
-      `q=${encodeURIComponent(query)}&` +
+      `q=${encodeURIComponent(enhancedQuery)}&` +
       `part=snippet&` +
       `type=video&` +
       `maxResults=${maxResults}&` +
-      `order=relevance`;
+      `order=${order}`;
 
     const response = await fetch(searchUrl);
 
     if (!response.ok) {
-      throw new Error(`YouTube API请求失败: ${response.status}`);
+      // 获取错误详细信息
+      const errorData = await response.json().catch(() => ({}));
+      console.log('YouTube API错误详情:', errorData);
+      
+      let errorMessage = '';
+      
+      // 检查具体的错误状态
+      if (response.status === 400) {
+        const reason = errorData.error?.errors?.[0]?.reason;
+        const message = errorData.error?.message || '';
+        
+        if (reason === 'keyInvalid' || message.includes('API key not valid')) {
+          errorMessage = 'YouTube API Key无效，请在管理后台检查配置';
+        } else if (reason === 'badRequest') {
+          if (message.includes('API key')) {
+            errorMessage = 'YouTube API Key格式错误，请在管理后台重新配置';
+          } else {
+            errorMessage = `YouTube API请求参数错误: ${message}`;
+          }
+        } else {
+          errorMessage = `YouTube API请求错误: ${message || 'Bad Request'}`;
+        }
+      } else if (response.status === 403) {
+        const reason = errorData.error?.errors?.[0]?.reason;
+        const message = errorData.error?.message || '';
+        
+        if (reason === 'quotaExceeded' || message.includes('quota')) {
+          errorMessage = 'YouTube API配额已用完，请稍后重试';
+        } else if (message.includes('not been used') || message.includes('disabled')) {
+          errorMessage = 'YouTube Data API v3未启用，请在Google Cloud Console中启用该API';
+        } else if (message.includes('blocked') || message.includes('restricted')) {
+          errorMessage = 'API Key被限制访问，请检查Google Cloud Console中的API Key限制设置';
+        } else {
+          errorMessage = 'YouTube API访问被拒绝，请检查API Key权限配置';
+        }
+      } else if (response.status === 401) {
+        errorMessage = 'YouTube API认证失败，请检查API Key是否正确';
+      } else {
+        errorMessage = `YouTube API请求失败 (${response.status})，请检查API Key配置`;
+      }
+      
+      // 返回错误响应而不是抛出异常
+      return NextResponse.json({
+        success: false,
+        error: errorMessage
+      }, { status: 400 });
     }
 
     const data = await response.json();
