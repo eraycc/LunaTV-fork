@@ -2839,23 +2839,33 @@ function PlayPageClient() {
         artPlayerRef.current.on('video:seeking', () => {
           isDraggingProgressRef.current = true;
           // v5.2.0新增: 拖拽时隐藏弹幕，减少CPU占用和闪烁
-          if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku && !artPlayerRef.current.plugins.artplayerPluginDanmuku.isHide) {
+          // 只有在外部弹幕开启且当前显示时才隐藏
+          if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku && 
+              externalDanmuEnabledRef.current && 
+              !artPlayerRef.current.plugins.artplayerPluginDanmuku.isHide) {
             artPlayerRef.current.plugins.artplayerPluginDanmuku.hide();
           }
         });
 
         artPlayerRef.current.on('video:seeked', () => {
           isDraggingProgressRef.current = false;
-          // v5.2.0优化: 拖拽结束后恢复弹幕显示并重置位置
+          // v5.2.0优化: 拖拽结束后根据外部弹幕开关状态决定是否恢复弹幕显示
           if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-            artPlayerRef.current.plugins.artplayerPluginDanmuku.show(); // 先恢复显示
-            setTimeout(() => {
-              // 延迟重置以确保播放状态稳定
-              if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-                artPlayerRef.current.plugins.artplayerPluginDanmuku.reset();
-                console.log('拖拽结束，弹幕已重置');
-              }
-            }, 100);
+            // 只有在外部弹幕开启时才恢复显示
+            if (externalDanmuEnabledRef.current) {
+              artPlayerRef.current.plugins.artplayerPluginDanmuku.show(); // 先恢复显示
+              setTimeout(() => {
+                // 延迟重置以确保播放状态稳定
+                if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+                  artPlayerRef.current.plugins.artplayerPluginDanmuku.reset();
+                  console.log('拖拽结束，弹幕已重置');
+                }
+              }, 100);
+            } else {
+              // 外部弹幕关闭时，确保保持隐藏状态
+              artPlayerRef.current.plugins.artplayerPluginDanmuku.hide();
+              console.log('拖拽结束，外部弹幕已关闭，保持隐藏状态');
+            }
           }
         });
 
