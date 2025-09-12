@@ -928,83 +928,7 @@ function SearchPageClient() {
 
         {/* 搜索结果或搜索历史 */}
         <div className='max-w-[95%] mx-auto mt-12 overflow-visible'>
-          {/* YouTube直接播放模式 - 无需搜索结果也可显示 */}
-          {searchType === 'youtube' && !showResults ? (
-            <section className='mb-12'>
-              <div className='mb-4'>
-                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                  YouTube视频
-                </h2>
-                
-                {/* YouTube模式切换 */}
-                <div className='mt-3 flex items-center gap-2'>
-                  <div className='inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 space-x-1'>
-                    <button
-                      type='button'
-                      onClick={() => {
-                        setYoutubeMode('search');
-                        setYoutubeError(null);
-                        setYoutubeWarning(null);
-                      }}
-                      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                        youtubeMode === 'search'
-                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
-                    >
-                      🔍 搜索视频
-                    </button>
-                    <button
-                      type='button'
-                      onClick={() => {
-                        setYoutubeMode('direct');
-                        setYoutubeResults(null);
-                        setYoutubeError(null);
-                        setYoutubeWarning(null);
-                      }}
-                      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                        youtubeMode === 'direct'
-                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                      }`}
-                    >
-                      🔗 直接播放
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* YouTube内容区域 */}
-              {youtubeMode === 'direct' ? (
-                /* 直接播放模式 */
-                <div className='space-y-4'>
-                  <div className='bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-900/20 dark:border-blue-800'>
-                    <div className='flex items-center text-blue-800 dark:text-blue-200 mb-2'>
-                      <svg className='w-5 h-5 mr-2' fill='currentColor' viewBox='0 0 20 20'>
-                        <path fillRule='evenodd' d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z' clipRule='evenodd' />
-                      </svg>
-                      <span className='font-medium'>💡 直接播放YouTube视频</span>
-                    </div>
-                    <p className='text-blue-700 dark:text-blue-300 text-sm'>
-                      粘贴任意YouTube链接，无需搜索即可直接播放视频。支持所有常见的YouTube链接格式。
-                    </p>
-                  </div>
-                  <DirectYouTubePlayer />
-                </div>
-              ) : (
-                /* 搜索模式提示 */
-                <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
-                  <div className='mb-4'>
-                    <svg className='w-16 h-16 mx-auto text-gray-300 dark:text-gray-600' fill='currentColor' viewBox='0 0 20 20'>
-                      <path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd' />
-                    </svg>
-                  </div>
-                  <p className='text-lg mb-2'>在上方搜索框输入关键词</p>
-                  <p className='text-sm'>开始搜索YouTube视频</p>
-                </div>
-              )}
-            </section>
-          ) : showResults ? (
+          {showResults ? (
             <section className='mb-12'>
               {searchType === 'netdisk' ? (
                 /* 网盘搜索结果 */
@@ -1374,53 +1298,137 @@ function SearchPageClient() {
                 </>
               )}
             </section>
-          ) : searchHistory.length > 0 ? (
-            // 搜索历史
-            <section className='mb-12'>
-              <h2 className='mb-4 text-xl font-bold text-gray-800 text-left dark:text-gray-200'>
-                搜索历史
-                {searchHistory.length > 0 && (
-                  <button
-                    onClick={() => {
-                      clearSearchHistory(); // 事件监听会自动更新界面
-                    }}
-                    className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
-                  >
-                    清空
-                  </button>
-                )}
-              </h2>
-              <div className='flex flex-wrap gap-2'>
-                {searchHistory.map((item) => (
-                  <div key={item} className='relative group'>
-                    <button
-                      onClick={() => {
-                        setSearchQuery(item);
-                        router.push(
-                          `/search?q=${encodeURIComponent(item.trim())}`
-                        );
-                      }}
-                      className='px-4 py-2 bg-gray-500/10 hover:bg-gray-300 rounded-full text-sm text-gray-700 transition-colors duration-200 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
-                    >
-                      {item}
-                    </button>
-                    {/* 删除按钮 */}
-                    <button
-                      aria-label='删除搜索历史'
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        deleteSearchHistory(item); // 事件监听会自动更新界面
-                      }}
-                      className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
-                    >
-                      <X className='w-3 h-3' />
-                    </button>
+          ) : (
+            /* 搜索历史或YouTube无搜索状态 */
+            <>
+              {/* 搜索历史 - 优先显示 */}
+              {searchHistory.length > 0 && (
+                <section className='mb-12'>
+                  <h2 className='mb-4 text-xl font-bold text-gray-800 text-left dark:text-gray-200'>
+                    搜索历史
+                    {searchHistory.length > 0 && (
+                      <button
+                        onClick={() => {
+                          clearSearchHistory(); // 事件监听会自动更新界面
+                        }}
+                        className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
+                      >
+                        清空
+                      </button>
+                    )}
+                  </h2>
+                  <div className='flex flex-wrap gap-2'>
+                    {searchHistory.map((item) => (
+                      <div key={item} className='relative group'>
+                        <button
+                          onClick={() => {
+                            setSearchQuery(item);
+                            router.push(
+                              `/search?q=${encodeURIComponent(item.trim())}`
+                            );
+                          }}
+                          className='px-4 py-2 bg-gray-500/10 hover:bg-gray-300 rounded-full text-sm text-gray-700 transition-colors duration-200 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
+                        >
+                          {item}
+                        </button>
+                        {/* 删除按钮 */}
+                        <button
+                          aria-label='删除搜索历史'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            deleteSearchHistory(item); // 事件监听会自动更新界面
+                          }}
+                          className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
+                        >
+                          <X className='w-3 h-3' />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                </section>
+              )}
+
+              {/* YouTube特殊模式显示 - 在搜索历史之后 */}
+              {searchType === 'youtube' && (
+                <section className='mb-12'>
+                  <div className='mb-4'>
+                    <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                      YouTube视频
+                    </h2>
+                    
+                    {/* YouTube模式切换 */}
+                    <div className='mt-3 flex items-center gap-2'>
+                      <div className='inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 space-x-1'>
+                        <button
+                          type='button'
+                          onClick={() => {
+                            setYoutubeMode('search');
+                            setYoutubeError(null);
+                            setYoutubeWarning(null);
+                          }}
+                          className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                            youtubeMode === 'search'
+                              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          🔍 搜索视频
+                        </button>
+                        <button
+                          type='button'
+                          onClick={() => {
+                            setYoutubeMode('direct');
+                            setYoutubeResults(null);
+                            setYoutubeError(null);
+                            setYoutubeWarning(null);
+                          }}
+                          className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                            youtubeMode === 'direct'
+                              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          🔗 直接播放
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* YouTube内容区域 */}
+                  {youtubeMode === 'direct' ? (
+                    /* 直接播放模式 */
+                    <div className='space-y-4'>
+                      <div className='bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-900/20 dark:border-blue-800'>
+                        <div className='flex items-center text-blue-800 dark:text-blue-200 mb-2'>
+                          <svg className='w-5 h-5 mr-2' fill='currentColor' viewBox='0 0 20 20'>
+                            <path fillRule='evenodd' d='M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z' clipRule='evenodd' />
+                          </svg>
+                          <span className='font-medium'>💡 直接播放YouTube视频</span>
+                        </div>
+                        <p className='text-blue-700 dark:text-blue-300 text-sm'>
+                          粘贴任意YouTube链接，无需搜索即可直接播放视频。支持所有常见的YouTube链接格式。
+                        </p>
+                      </div>
+                      <DirectYouTubePlayer />
+                    </div>
+                  ) : (
+                    /* 搜索模式提示 */
+                    <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
+                      <div className='mb-4'>
+                        <svg className='w-16 h-16 mx-auto text-gray-300 dark:text-gray-600' fill='currentColor' viewBox='0 0 20 20'>
+                          <path fillRule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clipRule='evenodd' />
+                        </svg>
+                      </div>
+                      <p className='text-lg mb-2'>在上方搜索框输入关键词</p>
+                      <p className='text-sm'>开始搜索YouTube视频</p>
+                    </div>
+                  )}
+                </section>
+              )}
+
+            </>
+          )}
         </div>
       </div>
 

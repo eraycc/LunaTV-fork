@@ -359,7 +359,7 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
       apiKey: '',                                       // 默认为空，需要管理员配置
       model: 'gpt-3.5-turbo',                          // 默认模型
       temperature: 0.7,                                // 默认温度
-      maxTokens: 1000                                  // 默认最大token数
+      maxTokens: 3000                                  // 默认最大token数
     };
   }
 

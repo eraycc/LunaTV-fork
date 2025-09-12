@@ -91,16 +91,82 @@ export async function POST(request: NextRequest) {
     ];
     const randomHint = randomElements[Math.floor(Math.random() * randomElements.length)];
     
-    const systemPrompt = `你是LunaTV的智能推荐助手，专门帮助用户发现优质的影视内容。当前日期：${currentDate}
+    // 获取最后一条用户消息用于分析
+    const userMessage = messages[messages.length - 1]?.content || '';
+    
+    // 检测用户消息中的YouTube链接
+    const detectVideoLinks = (content: string) => {
+      const youtubePattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]+)/g;
+      const matches = [];
+      let match;
+      while ((match = youtubePattern.exec(content)) !== null) {
+        matches.push({
+          originalUrl: match[0],
+          videoId: match[1],
+          fullMatch: match[0]
+        });
+      }
+      return matches;
+    };
 
-你的回复必须遵循以下步骤：
-1. 首先用自然语言简单回应用户的需求。
-2. 然后，另起一行，开始提供具体的影片推荐列表。
-3. 如果用户的聊天内容跟获取影视推荐方面无关，直接拒绝回答！
-4. 对于推荐列表中的每一部影片，你必须严格按照以下格式提供，不得有任何偏差：
+    // 检查是否包含YouTube链接
+    const videoLinks = detectVideoLinks(userMessage);
+    const hasVideoLinks = videoLinks.length > 0;
+
+    // 获取YouTube配置，判断是否启用YouTube推荐功能
+    const youtubeConfig = adminConfig.YouTubeConfig;
+    const youtubeEnabled = youtubeConfig?.enabled;
+
+    // 构建功能列表和详细说明
+    const capabilities = ['影视剧推荐'];
+    let youtubeSearchStatus = '';
+    
+    // 视频链接解析功能（所有用户可用）
+    capabilities.push('YouTube视频链接解析');
+    
+    // YouTube推荐功能状态判断
+    if (youtubeEnabled && youtubeConfig.apiKey) {
+      capabilities.push('YouTube视频搜索推荐');
+      youtubeSearchStatus = '✅ 支持YouTube视频搜索推荐（真实API）';
+    } else if (youtubeEnabled) {
+      youtubeSearchStatus = '⚠️ YouTube搜索功能已开启但未配置API Key，无法提供搜索结果';
+    } else {
+      youtubeSearchStatus = '❌ YouTube搜索功能未启用，无法搜索推荐YouTube视频';
+    }
+
+    const systemPrompt = `你是LunaTV的智能推荐助手，支持：${capabilities.join('、')}。当前日期：${currentDate}
+
+## 功能状态：
+1. **影视剧推荐** ✅ 始终可用
+2. **YouTube视频链接解析** ✅ 始终可用（无需API Key）
+3. **YouTube视频搜索推荐** ${youtubeSearchStatus}
+
+## 判断用户需求：
+- 如果用户发送了YouTube链接 → 使用视频链接解析功能
+- 如果用户想要新闻、教程、音乐、娱乐视频等内容：
+  ${youtubeEnabled && youtubeConfig.apiKey ? 
+    '→ 使用YouTube推荐功能' : 
+    '→ 告知用户"YouTube搜索功能暂不可用，请联系管理员配置YouTube API Key"'}
+- 如果用户想要电影、电视剧、动漫等影视内容 → 使用影视推荐功能
+- 其他无关内容 → 直接拒绝回答
+
+## 回复格式要求：
+
+### 影视推荐格式：
 《片名》 (年份) [类型] - 简短描述
 
-推荐要求：
+### 视频链接解析格式：
+检测到用户发送了YouTube链接时，回复：
+我识别到您发送了YouTube视频链接，正在为您解析视频信息...
+
+${youtubeEnabled && youtubeConfig.apiKey ? `### YouTube推荐格式：
+【视频标题】 - 简短描述
+
+示例：
+【如何学习编程】 - 适合初学者的编程入门教程
+【今日新闻速报】 - 最新国际新闻资讯` : '### YouTube搜索不可用时的回复：\n当用户请求YouTube视频搜索时，请回复：\n"很抱歉，YouTube视频搜索功能暂不可用。管理员尚未配置YouTube API Key。\n\n不过您可以：\n- 直接发送YouTube链接给我解析\n- 让我为您推荐影视剧内容"'}
+
+## 推荐要求：
 - ${randomHint}
 - 重点推荐${currentYear}年的最新作品
 - 可以包含${lastYear}年的热门作品
@@ -117,11 +183,7 @@ export async function POST(request: NextRequest) {
 - "简短描述"是对影片的简要介绍。
 - 每一部推荐的影片都必须独占一行，并以《》开始。
 
-格式示例（注意：优先推荐${currentYear}-${lastYear}年作品）：
-《示例作品1》 (${currentYear}) [类型] - 简短描述。
-《示例作品2》 (${lastYear}) [类型] - 简短描述。
-
-请始终保持专业和有用的态度，为用户提供最佳的影视推荐体验。`;
+请始终保持专业和有用的态度，根据用户输入的内容类型提供相应的服务。`;
 
     // 准备发送给OpenAI的消息
     const chatMessages: OpenAIMessage[] = [
@@ -241,6 +303,46 @@ export async function POST(request: NextRequest) {
     
     const aiContent = aiResult.choices[0].message.content;
     
+    // 处理视频链接解析
+    if (hasVideoLinks) {
+      try {
+        const parsedVideos = await handleVideoLinkParsing(videoLinks);
+        
+        // 构建返回格式
+        const response = {
+          id: aiResult.id || `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          created: aiResult.created || Math.floor(Date.now() / 1000),
+          model: aiResult.model || requestBody.model,
+          choices: aiResult.choices || [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: aiContent
+            },
+            finish_reason: aiResult.choices?.[0]?.finish_reason || 'stop'
+          }],
+          usage: aiResult.usage || {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0
+          },
+          videoLinks: parsedVideos, // 添加解析的视频链接数据
+          type: 'video_link_parse'
+        };
+
+        // 缓存结果（只对简单问题进行短时缓存，15分钟）
+        if (cacheKey) {
+          await db.setCache(cacheKey, response, 900); // 15分钟缓存
+        }
+
+        return NextResponse.json(response);
+      } catch (error) {
+        console.error('视频链接解析失败:', error);
+        // 解析失败时继续正常流程
+      }
+    }
+    
     // 检查内容是否为空
     if (!aiContent || aiContent.trim() === '') {
       console.error('AI返回空内容:', {
@@ -282,6 +384,49 @@ export async function POST(request: NextRequest) {
           isReasoningModel: useMaxCompletionTokens
         }
       }, { status: 500 });
+    }
+    
+    // 检测是否为YouTube视频推荐（参考alpha逻辑）
+    const isYouTubeRecommendation = youtubeEnabled && youtubeConfig.apiKey && aiContent.includes('【') && aiContent.includes('】');
+    
+    if (isYouTubeRecommendation) {
+      try {
+        const searchKeywords = extractYouTubeSearchKeywords(aiContent);
+        const youtubeVideos = await searchYouTubeVideos(searchKeywords, youtubeConfig);
+        
+        // 构建YouTube推荐响应
+        const response = {
+          id: aiResult.id || `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          created: aiResult.created || Math.floor(Date.now() / 1000),
+          model: aiResult.model || requestBody.model,
+          choices: aiResult.choices || [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: aiContent + (youtubeVideos.length > 0 ? `\n\n为您推荐以下${youtubeVideos.length}个YouTube视频：` : '\n\n抱歉，没有找到相关的YouTube视频，请尝试其他关键词。')
+            },
+            finish_reason: aiResult.choices?.[0]?.finish_reason || 'stop'
+          }],
+          usage: aiResult.usage || {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0
+          },
+          youtubeVideos,
+          type: 'youtube_recommend'
+        };
+
+        // 缓存结果
+        if (cacheKey) {
+          await db.setCache(cacheKey, response, 900);
+        }
+
+        return NextResponse.json(response);
+      } catch (error) {
+        console.error('YouTube推荐失败:', error);
+        // 推荐失败时继续正常流程
+      }
     }
     
     // 提取结构化推荐信息
@@ -386,6 +531,112 @@ export async function GET(request: NextRequest) {
       error: '获取历史记录失败' 
     }, { status: 500 });
   }
+}
+
+// 视频链接解析处理函数
+async function handleVideoLinkParsing(videoLinks: any[]) {
+  const parsedVideos = [];
+  
+  for (const link of videoLinks) {
+    try {
+      // 使用YouTube oEmbed API获取视频信息（公开，无需API Key）
+      const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${link.videoId}&format=json`);
+      
+      if (response.ok) {
+        const videoInfo = await response.json();
+        parsedVideos.push({
+          videoId: link.videoId,
+          originalUrl: link.originalUrl,
+          title: videoInfo?.title || '直接播放的YouTube视频',
+          channelName: videoInfo?.author_name || '未知频道',
+          thumbnail: `https://img.youtube.com/vi/${link.videoId}/mqdefault.jpg`,
+          playable: true,
+          embedUrl: `https://www.youtube.com/embed/${link.videoId}?autoplay=1&rel=0`
+        });
+      } else {
+        // 即使oEmbed失败，也提供基本信息
+        parsedVideos.push({
+          videoId: link.videoId,
+          originalUrl: link.originalUrl,
+          title: '直接播放的YouTube视频',
+          channelName: '未知频道',
+          thumbnail: `https://img.youtube.com/vi/${link.videoId}/mqdefault.jpg`,
+          playable: true,
+          embedUrl: `https://www.youtube.com/embed/${link.videoId}?autoplay=1&rel=0`
+        });
+      }
+    } catch (error) {
+      console.error(`解析视频 ${link.videoId} 失败:`, error);
+      parsedVideos.push({
+        videoId: link.videoId,
+        originalUrl: link.originalUrl,
+        title: '解析失败的视频',
+        error: '无法获取视频信息',
+        playable: false
+      });
+    }
+  }
+  
+  return parsedVideos;
+}
+
+// 从AI回复中提取YouTube搜索关键词（参考alpha逻辑）
+function extractYouTubeSearchKeywords(content: string): string[] {
+  const keywords: string[] = [];
+  const videoPattern = /【([^】]+)】/g;
+  let match;
+
+  while ((match = videoPattern.exec(content)) !== null && keywords.length < 4) {
+    keywords.push(match[1].trim());
+  }
+
+  return keywords;
+}
+
+// YouTube视频搜索函数（仅支持真实API）
+async function searchYouTubeVideos(keywords: string[], youtubeConfig: any) {
+  const videos = [];
+
+  // 检查API Key
+  if (!youtubeConfig.apiKey) {
+    throw new Error('YouTube API Key未配置');
+  }
+
+  // 使用真实YouTube API
+  for (const keyword of keywords) {
+    if (videos.length >= 4) break;
+
+    try {
+      const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+      searchUrl.searchParams.set('key', youtubeConfig.apiKey);
+      searchUrl.searchParams.set('q', keyword);
+      searchUrl.searchParams.set('part', 'snippet');
+      searchUrl.searchParams.set('type', 'video');
+      searchUrl.searchParams.set('maxResults', '1');
+      searchUrl.searchParams.set('order', 'relevance');
+
+      const response = await fetch(searchUrl.toString());
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+          const video = data.items[0];
+          videos.push({
+            id: video.id.videoId,
+            title: video.snippet.title,
+            description: video.snippet.description,
+            thumbnail: video.snippet.thumbnails?.medium?.url || video.snippet.thumbnails?.default?.url,
+            channelTitle: video.snippet.channelTitle,
+            publishedAt: video.snippet.publishedAt
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`搜索关键词 "${keyword}" 失败:`, error);
+    }
+  }
+
+  return videos;
 }
 
 // 从AI回复中提取推荐信息的辅助函数

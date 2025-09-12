@@ -11,6 +11,36 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "5.3.1",
+    date: "2025-09-11",
+    added: [
+    "🎥 AI推荐系统YouTube视频链接解析：支持直接解析YouTube视频链接并获取视频信息",
+    "🔍 AI推荐卡片三种类型支持：影视推荐卡片、YouTube视频卡片、视频链接解析卡片",
+    "🚀 升级react-window到v2.1.0：性能优化提升虚拟滚动效率",
+    "📺 升级hls.js到v1.6.12：改进视频播放稳定性和兼容性",
+    "🎬 YouTube搜索功能增强：支持时间筛选和排序选项",
+    "🔄 直播源自动刷新功能：支持localStorage持久化配置",
+    "🎯 电影快速筛选按钮：新增类型快速访问功能",
+    "📱 TV节目和综艺节目筛选扩展：完善筛选功能覆盖",
+    "🎮 YouTube直播播放器优化：实时视频信息获取功能"
+    ],
+    changed: [
+      // 无变更内容
+    ],
+    fixed: [
+    "🔧 修复AI聊天列表项空格过多问题：优化markdown格式处理逻辑",
+    "📝 解决AI响应中项目符号间距过大问题：移除多余的margin-bottom样式",
+    "🎵 修复外部弹幕拖拽进度条后显示异常问题：改进弹幕同步机制",
+    "🔍 修复YouTube搜索缓存键和内容类型筛选问题：优化缓存管理策略",
+    "📺 修复TV节目和综艺节目MultiLevelSelector缺失initialValues属性问题",
+    "🛠️ 解决DoubanSelector中的TypeScript编译错误",
+    "🎯 修复平台筛选状态同步问题：改进TV节目筛选器状态管理",
+    "🔗 使用YouTube无cookie域名：减少机器人验证问题",
+    "📊 修复搜索历史显示问题：优化历史记录展示逻辑",
+    "🔝 修复播放页面返回顶部按钮显示问题"
+    ]
+  },
+  {
     version: "5.3.0",
     date: "2025-09-10",
     added: [

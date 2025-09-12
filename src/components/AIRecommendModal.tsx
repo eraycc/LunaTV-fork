@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Brain, Send, Sparkles, X } from 'lucide-react';
+import { Brain, Send, Sparkles, X, Play, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -25,6 +25,9 @@ interface AIRecommendModalProps {
 
 interface ExtendedAIMessage extends AIMessage {
   recommendations?: MovieRecommendation[];
+  youtubeVideos?: any[];
+  videoLinks?: any[];
+  type?: string;
 }
 
 export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalProps) {
@@ -35,6 +38,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
   const [error, setError] = useState<{message: string, details?: string} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -55,18 +59,24 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
             timestamp: msg.timestamp || new Date().toISOString()
           })));
           return; // 有缓存就不显示欢迎消息
+        } else {
+          // 🔥 修复Bug #2: 超过30分钟时真正删除localStorage中的过期数据
+          console.log('AI聊天记录已超过30分钟，自动清除缓存');
+          localStorage.removeItem('ai-recommend-messages');
         }
       }
       
       // 没有有效缓存时显示欢迎消息
       const welcomeMessage: ExtendedAIMessage = {
         role: 'assistant',
-        content: '你好！我是AI影视推荐助手，可以根据你的喜好为你推荐精彩的影视作品。请告诉我你想看什么类型的影片，或者描述一下你的心情和偏好吧！',
+        content: '你好！我是AI智能助手，支持以下功能：\n\n🎬 影视剧推荐 - 推荐电影、电视剧、动漫等\n🔗 视频链接解析 - 解析YouTube链接并播放\n📺 视频内容搜索 - 搜索相关视频内容\n\n💡 直接告诉我你想看什么类型的内容，或发送YouTube链接给我解析！',
         timestamp: new Date().toISOString()
       };
       setMessages([welcomeMessage]);
     } catch (error) {
       console.error("Failed to load messages from cache", error);
+      // 发生错误时也清除可能损坏的缓存
+      localStorage.removeItem('ai-recommend-messages');
     }
   }, []);
 
@@ -74,9 +84,22 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
   useEffect(() => {
     scrollToBottom();
     try {
+      // 🔥 修复Bug #1: 保持原有时间戳，不要每次都重置
+      const existingCache = localStorage.getItem('ai-recommend-messages');
+      let existingTimestamp = new Date().getTime(); // 默认当前时间
+      
+      if (existingCache) {
+        try {
+          const parsed = JSON.parse(existingCache);
+          existingTimestamp = parsed.timestamp || existingTimestamp;
+        } catch {
+          // 解析失败时使用当前时间
+        }
+      }
+      
       const cache = {
         messages,
-        timestamp: new Date().getTime()
+        timestamp: existingTimestamp // 保持原有时间戳，不重置
       };
       localStorage.setItem('ai-recommend-messages', JSON.stringify(cache));
     } catch (error) {
@@ -97,6 +120,18 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
     const searchQuery = encodeURIComponent(movie.title);
     router.push(`/search?q=${searchQuery}`);
     onClose(); // 关闭对话框
+  };
+
+  // 处理YouTube视频点击播放
+  const handleYouTubeVideoSelect = (video: any) => {
+    setPlayingVideoId(playingVideoId === video.id ? null : video.id);
+  };
+
+  // 处理视频链接解析结果
+  const handleVideoLinkPlay = (video: any) => {
+    if (video.playable && video.embedUrl) {
+      setPlayingVideoId(playingVideoId === video.videoId ? null : video.videoId);
+    }
   };
 
   // 发送消息
@@ -125,6 +160,9 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
         content: response.choices[0].message.content,
         timestamp: new Date().toISOString(),
         recommendations: response.recommendations || [],
+        youtubeVideos: response.youtubeVideos || [],
+        videoLinks: response.videoLinks || [],
+        type: response.type || 'normal',
       };
       // 添加AI回复到完整的消息历史（不是截取的历史）
       setMessages([...updatedMessages, assistantMessage]);
@@ -187,7 +225,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
     // 重新显示欢迎消息
     const welcomeMessage: ExtendedAIMessage = {
       role: 'assistant',
-      content: '你好！我是AI影视推荐助手，可以根据你的喜好为你推荐精彩的影视作品。请告诉我你想看什么类型的影片，或者描述一下你的心情和偏好吧！',
+      content: '你好！我是AI智能助手，支持以下功能：\n\n🎬 影视剧推荐 - 推荐电影、电视剧、动漫等\n🔗 视频链接解析 - 解析YouTube链接并播放\n📺 视频内容搜索 - 搜索相关视频内容\n\n💡 直接告诉我你想看什么类型的内容，或发送YouTube链接给我解析！',
       timestamp: new Date().toISOString()
     };
     setMessages([welcomeMessage]);
@@ -216,8 +254,8 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
               <Brain className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">AI 影视推荐</h2>
-              <p className="text-blue-100 text-sm">智能推荐，发现精彩内容</p>
+              <h2 className="text-xl font-bold text-white">AI 智能助手</h2>
+              <p className="text-blue-100 text-sm">影视推荐 · 视频解析 · YouTube搜索</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -243,16 +281,16 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-800"
         >
-          {messages.length <= 1 && messages.every(msg => msg.role === 'assistant' && msg.content.includes('AI影视推荐助手')) && (
+          {messages.length <= 1 && messages.every(msg => msg.role === 'assistant' && msg.content.includes('AI智能助手')) && (
             <div className="text-center py-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mb-4">
                 <Sparkles className="h-8 w-8 text-white" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                欢迎使用AI影视推荐
+                欢迎使用AI智能助手
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                告诉我你的喜好，我会为你推荐精彩的影视作品
+                支持影视推荐、YouTube链接解析和视频搜索推荐
               </p>
               
               {/* 预设问题 */}
@@ -351,6 +389,163 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
                   ))}
                 </div>
               )}
+
+              {/* YouTube视频推荐卡片 */}
+              {message.role === 'assistant' && message.youtubeVideos && message.youtubeVideos.length > 0 && (
+                <div className="mt-3 space-y-2 max-w-[80%]">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 px-2 py-1 rounded-full text-xs font-medium mr-2">
+                        📺 点击播放
+                      </span>
+                      YouTube视频推荐
+                    </div>
+                    <span className="text-gray-400 dark:text-gray-500">
+                      {message.youtubeVideos.length} 个视频
+                    </span>
+                  </div>
+                  {message.youtubeVideos.map((video, index) => (
+                    <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                      {playingVideoId === video.id ? (
+                        <div className="relative">
+                          <div className="aspect-video">
+                            <iframe
+                              src={`https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                              title={video.title}
+                            />
+                          </div>
+                          <button
+                            onClick={() => setPlayingVideoId(null)}
+                            className="absolute top-2 right-2 bg-black bg-opacity-50 text-white rounded-full p-1 hover:bg-opacity-70 transition-opacity"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          <div className="p-3">
+                            <h4 className="font-medium text-gray-900 dark:text-white text-sm">{video.title}</h4>
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{video.channelTitle}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div onClick={() => handleYouTubeVideoSelect(video)} className="p-3 cursor-pointer hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all">
+                          <div className="flex items-start gap-3">
+                            <div className="relative">
+                              <img src={video.thumbnail} alt={video.title} className="w-16 h-12 object-cover rounded flex-shrink-0" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 rounded">
+                                <div className="bg-red-600 text-white rounded-full p-1">
+                                  <Play className="w-3 h-3" />
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">{video.title}</h4>
+                              <p className="text-xs text-red-600 dark:text-red-400 mt-1">{video.channelTitle}</p>
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{video.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 视频链接解析卡片 */}
+              {message.role === 'assistant' && message.videoLinks && message.videoLinks.length > 0 && (
+                <div className="mt-3 space-y-2 max-w-[80%]">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 px-2 py-1 rounded-full text-xs font-medium mr-2">
+                        🔗 链接解析
+                      </span>
+                      视频链接解析结果
+                    </div>
+                    <span className="text-gray-400 dark:text-gray-500">
+                      {message.videoLinks.length} 个链接
+                    </span>
+                  </div>
+                  {message.videoLinks.map((video, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                      {video.playable ? (
+                        <div className="space-y-3">
+                          {playingVideoId === video.videoId ? (
+                            <div className="relative">
+                              <div className="aspect-video">
+                                <iframe
+                                  src={video.embedUrl}
+                                  className="w-full h-full"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowFullScreen
+                                  title={video.title}
+                                />
+                              </div>
+                              <button
+                                onClick={() => setPlayingVideoId(null)}
+                                className="absolute top-2 right-2 bg-black bg-opacity-50 text-white rounded-full p-1 hover:bg-opacity-70 transition-opacity"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-3">
+                              <div className="relative cursor-pointer" onClick={() => handleVideoLinkPlay(video)}>
+                                <img 
+                                  src={video.thumbnail} 
+                                  alt={video.title}
+                                  className="w-20 h-15 object-cover rounded"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 rounded">
+                                  <div className="bg-red-600 text-white rounded-full p-2">
+                                    <Play className="w-4 h-4" />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 dark:text-gray-100">
+                                  {video.title}
+                                </h4>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {video.channelName}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  原链接: {video.originalUrl}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="flex gap-2">
+                            {playingVideoId !== video.videoId && (
+                              <button
+                                onClick={() => handleVideoLinkPlay(video)}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm"
+                              >
+                                <Play className="w-4 h-4" />
+                                直接播放
+                              </button>
+                            )}
+                            <button
+                              onClick={() => window.open(video.originalUrl, '_blank')}
+                              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              原始链接
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-red-600 dark:text-red-400">
+                          <p className="font-medium">解析失败</p>
+                          <p className="text-sm">{video.error}</p>
+                          <p className="text-xs mt-1">原链接: {video.originalUrl}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
@@ -409,7 +604,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入您想要的影视推荐类型..."
+                placeholder="输入影视推荐类型、YouTube搜索内容或直接粘贴YouTube链接..."
                 className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                 rows={2}
                 disabled={isLoading}
@@ -427,7 +622,7 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
           
           {/* 提示信息 */}
           <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-            <span>💡 点击右侧影片卡片可直接搜索</span>
+            <span>💡 支持影视推荐、YouTube链接解析和视频搜索</span>
             <span>按 Enter 发送，Shift+Enter 换行</span>
           </div>
         </div>

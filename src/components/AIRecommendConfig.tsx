@@ -22,7 +22,7 @@ const AIRecommendConfig = ({ config, refreshConfig }: AIRecommendConfigProps) =>
     apiKey: '',
     model: 'gpt-3.5-turbo',
     temperature: 0.7,
-    maxTokens: 2000
+    maxTokens: 3000
   });
 
   // 常用模型参考（建议使用支持联网搜索的模型）
@@ -51,7 +51,7 @@ const AIRecommendConfig = ({ config, refreshConfig }: AIRecommendConfigProps) =>
         apiKey: config.AIRecommendConfig.apiKey || '',
         model: config.AIRecommendConfig.model || 'gpt-3.5-turbo',
         temperature: config.AIRecommendConfig.temperature ?? 0.7,
-        maxTokens: config.AIRecommendConfig.maxTokens ?? 2000
+        maxTokens: config.AIRecommendConfig.maxTokens ?? 3000
       });
     }
   }, [config]);
