@@ -376,6 +376,11 @@ function PlayPageClient() {
   // 弹幕加载状态管理，防止重复加载
   const danmuLoadingRef = useRef<boolean>(false);
   const lastDanmuLoadKeyRef = useRef<string>('');
+  
+  // 🚀 新增：弹幕操作防抖和性能优化
+  const danmuOperationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const episodeSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const danmuPluginStateRef = useRef<any>(null); // 保存弹幕插件状态
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
@@ -989,6 +994,20 @@ function PlayPageClient() {
 
   // 清理播放器资源的统一函数（添加更完善的清理逻辑）
   const cleanupPlayer = () => {
+    // 🚀 新增：清理弹幕优化相关的定时器
+    if (danmuOperationTimeoutRef.current) {
+      clearTimeout(danmuOperationTimeoutRef.current);
+      danmuOperationTimeoutRef.current = null;
+    }
+    
+    if (episodeSwitchTimeoutRef.current) {
+      clearTimeout(episodeSwitchTimeoutRef.current);
+      episodeSwitchTimeoutRef.current = null;
+    }
+    
+    // 清理弹幕状态引用
+    danmuPluginStateRef.current = null;
+    
     if (artPlayerRef.current) {
       try {
         // 1. 清理弹幕插件的WebWorker
@@ -1178,6 +1197,73 @@ function PlayPageClient() {
     }
   }
 
+  // 🚀 优化的弹幕操作处理函数（防抖 + 性能优化）
+  const handleDanmuOperationOptimized = (nextState: boolean) => {
+    // 清除之前的防抖定时器
+    if (danmuOperationTimeoutRef.current) {
+      clearTimeout(danmuOperationTimeoutRef.current);
+    }
+    
+    // 立即更新UI状态（确保响应性）
+    externalDanmuEnabledRef.current = nextState;
+    setExternalDanmuEnabled(nextState);
+    
+    // 同步保存到localStorage（快速操作）
+    try {
+      localStorage.setItem('enable_external_danmu', String(nextState));
+    } catch (e) {
+      console.warn('localStorage设置失败:', e);
+    }
+    
+    // 防抖处理弹幕数据操作（避免频繁切换时的性能问题）
+    danmuOperationTimeoutRef.current = setTimeout(async () => {
+      try {
+        if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+          const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
+          
+          if (nextState) {
+            // 开启弹幕：使用更温和的加载方式
+            console.log('🚀 优化后开启外部弹幕...');
+            
+            // 使用requestIdleCallback优化性能（如果可用）
+            const loadDanmu = async () => {
+              const externalDanmu = await loadExternalDanmu();
+              // 二次确认状态，防止快速切换导致的状态不一致
+              if (externalDanmuEnabledRef.current && artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+                plugin.load(externalDanmu);
+                plugin.show();
+                console.log('✅ 外部弹幕已优化加载:', externalDanmu.length, '条');
+                
+                if (artPlayerRef.current && externalDanmu.length > 0) {
+                  artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
+                }
+              }
+            };
+            
+            // 使用 requestIdleCallback 或 setTimeout 来确保不阻塞主线程
+            if (typeof requestIdleCallback !== 'undefined') {
+              requestIdleCallback(loadDanmu, { timeout: 1000 });
+            } else {
+              setTimeout(loadDanmu, 50);
+            }
+          } else {
+            // 关闭弹幕：立即处理
+            console.log('🚀 优化后关闭外部弹幕...');
+            plugin.load([]);
+            plugin.hide();
+            console.log('✅ 外部弹幕已关闭');
+            
+            if (artPlayerRef.current) {
+              artPlayerRef.current.notice.show = '外部弹幕已关闭';
+            }
+          }
+        }
+      } catch (error) {
+        console.error('优化后弹幕操作失败:', error);
+      }
+    }, 300); // 300ms防抖延迟
+  };
+
   // 加载外部弹幕数据（带缓存和防重复）
   const loadExternalDanmu = async (): Promise<any[]> => {
     if (!externalDanmuEnabledRef.current) {
@@ -1296,36 +1382,74 @@ function PlayPageClient() {
     }
   };
 
-  // 当集数索引变化时自动更新视频地址
+  // 🚀 优化的集数变化处理（防抖 + 状态保护）
   useEffect(() => {
     updateVideoUrl(detail, currentEpisodeIndex);
     
     // 重置弹幕加载标识，允许新集数加载弹幕
     lastDanmuLoadKeyRef.current = '';
     
+    // 清除之前的集数切换定时器，防止重复执行
+    if (episodeSwitchTimeoutRef.current) {
+      clearTimeout(episodeSwitchTimeoutRef.current);
+    }
+    
     // 如果播放器已经存在且弹幕插件已加载，重新加载弹幕
     if (artPlayerRef.current && artPlayerRef.current.plugins?.artplayerPluginDanmuku) {
-      console.log('集数变化，重新加载弹幕');
-      setTimeout(async () => {
+      console.log('🚀 集数变化，优化后重新加载弹幕');
+      
+      // 保存当前弹幕插件状态
+      danmuPluginStateRef.current = {
+        isHide: artPlayerRef.current.plugins.artplayerPluginDanmuku.isHide,
+        isStop: artPlayerRef.current.plugins.artplayerPluginDanmuku.isStop,
+        option: artPlayerRef.current.plugins.artplayerPluginDanmuku.option
+      };
+      
+      // 使用防抖处理弹幕重新加载
+      episodeSwitchTimeoutRef.current = setTimeout(async () => {
         try {
-          const externalDanmu = await loadExternalDanmu(); // 这里会检查开关状态
-          console.log('集数变化后外部弹幕加载结果:', externalDanmu);
+          // 确保播放器和插件仍然存在（防止快速切换时的状态不一致）
+          if (!artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+            console.warn('⚠️ 集数切换后弹幕插件不存在，跳过弹幕加载');
+            return;
+          }
           
+          const externalDanmu = await loadExternalDanmu(); // 这里会检查开关状态
+          console.log('🔄 集数变化后外部弹幕加载结果:', externalDanmu);
+          
+          // 再次确认插件状态
           if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+            const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
+            
             if (externalDanmu.length > 0) {
-              console.log('向播放器插件重新加载弹幕数据:', externalDanmu.length, '条');
-              artPlayerRef.current.plugins.artplayerPluginDanmuku.load(externalDanmu);
-              artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
+              console.log('✅ 向播放器插件重新加载弹幕数据:', externalDanmu.length, '条');
+              plugin.load(externalDanmu);
+              
+              // 恢复弹幕插件的状态
+              if (danmuPluginStateRef.current) {
+                if (!danmuPluginStateRef.current.isHide) {
+                  plugin.show();
+                }
+              }
+              
+              if (artPlayerRef.current) {
+                artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
+              }
             } else {
-              console.log('集数变化后没有弹幕数据可加载');
-              // 不要自动load([])，保持当前状态
-              artPlayerRef.current.notice.show = '暂无弹幕数据';
+              console.log('📭 集数变化后没有弹幕数据可加载');
+              // 不自动清空，保持用户体验
+              if (artPlayerRef.current) {
+                artPlayerRef.current.notice.show = '暂无弹幕数据';
+              }
             }
           }
         } catch (error) {
-          console.error('集数变化后加载外部弹幕失败:', error);
+          console.error('❌ 集数变化后加载外部弹幕失败:', error);
+        } finally {
+          // 清理定时器引用
+          episodeSwitchTimeoutRef.current = null;
         }
-      }, 1000); // 延迟1秒确保视频加载完成
+      }, 800); // 缩短延迟时间，提高响应性
     }
   }, [detail, currentEpisodeIndex]);
 
@@ -2015,10 +2139,15 @@ function PlayPageClient() {
     // 优先使用ArtPlayer的switch方法，避免重建播放器
     if (artPlayerRef.current && !loading) {
       try {
-        // 清空当前弹幕（为切换做准备）
+        // 🚀 优化：不在这里处理弹幕，让 useEffect 统一处理
+        // 保存当前弹幕状态，但不清空弹幕（避免闪烁）
         if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-          artPlayerRef.current.plugins.artplayerPluginDanmuku.load([]);
-          console.log('已清空弹幕数据，准备切换');
+          danmuPluginStateRef.current = {
+            isHide: artPlayerRef.current.plugins.artplayerPluginDanmuku.isHide,
+            isStop: artPlayerRef.current.plugins.artplayerPluginDanmuku.isStop,
+            option: artPlayerRef.current.plugins.artplayerPluginDanmuku.option
+          };
+          console.log('🔄 已保存弹幕状态，准备切换视频');
         }
         
         // 使用ArtPlayer的switch方法切换URL
@@ -2033,26 +2162,7 @@ function PlayPageClient() {
           );
         }
         
-        // 延迟重新加载弹幕，确保视频切换完成
-        setTimeout(async () => {
-          try {
-            const externalDanmu = await loadExternalDanmu();
-            console.log('切换后重新加载弹幕结果:', externalDanmu);
-            
-            if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-              if (externalDanmu.length > 0) {
-                console.log('切换后向播放器插件加载弹幕数据:', externalDanmu.length, '条');
-                artPlayerRef.current.plugins.artplayerPluginDanmuku.load(externalDanmu);
-                artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
-              } else {
-                console.log('切换后没有弹幕数据可加载');
-                artPlayerRef.current.notice.show = '暂无弹幕数据';
-              }
-            }
-          } catch (error) {
-            console.error('切换后重新加载外部弹幕失败:', error);
-          }
-        }, 1500);
+        // 🚀 移除原有的 setTimeout 弹幕加载逻辑，交由 useEffect 统一优化处理
         
         console.log('使用switch方法成功切换视频');
         return;
@@ -2264,78 +2374,13 @@ function PlayPageClient() {
             onSwitch: function (item: any) {
               const nextState = !item.switch;
               
-              // 立即同步更新所有状态（确保UI响应速度）
-              externalDanmuEnabledRef.current = nextState;
-              setExternalDanmuEnabled(nextState);
+              // 🚀 使用优化后的弹幕操作处理函数
+              handleDanmuOperationOptimized(nextState);
+              
+              // 更新tooltip显示
               item.tooltip = nextState ? '外部弹幕已开启' : '外部弹幕已关闭';
               
-              // 同步localStorage操作（快速）
-              try {
-                localStorage.setItem('enable_external_danmu', String(nextState));
-              } catch (e) {
-                console.warn('localStorage设置失败:', e);
-              }
-              
-              // 异步处理弹幕数据（完全非阻塞）
-              Promise.resolve().then(async () => {
-                try {
-                  if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-                    const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
-                    
-                    if (nextState) {
-                      // 开启外部弹幕：清空当前数据再加载新数据
-                      console.log('开启外部弹幕，清空并加载新数据...');
-                      plugin.load([]); // 先清空
-                      const externalDanmu = await loadExternalDanmu();
-                      if (externalDanmuEnabledRef.current) { // 再次检查状态，防止快速切换
-                        plugin.load(externalDanmu);
-                        plugin.show();
-                        console.log('外部弹幕已加载:', externalDanmu.length, '条');
-                        // 显示弹幕加载提示
-                        if (artPlayerRef.current) {
-                          if (externalDanmu.length > 0) {
-                            artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
-                          } else {
-                            artPlayerRef.current.notice.show = '暂无弹幕数据';
-                          }
-                        }
-                      }
-                    } else {
-                      // 关闭外部弹幕：清空数据并隐藏
-                      console.log('关闭外部弹幕，清空数据并隐藏...');
-                      plugin.load([]); // 清空弹幕数据
-                      plugin.hide();
-                      console.log('外部弹幕已关闭并清空');
-                      // 显示关闭提示
-                      if (artPlayerRef.current) {
-                        artPlayerRef.current.notice.show = '外部弹幕已关闭';
-                      }
-                    }
-                  }
-                } catch (error) {
-                  console.error('异步处理外部弹幕失败:', error);
-                }
-              });
-              
               return nextState; // 立即返回新状态
-            },
-          },
-          {
-            html: '弹幕开关',
-            icon: '<text x="50%" y="50%" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">弹</text>',
-            tooltip: '弹幕显示/隐藏',
-            onClick() {
-              if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-                const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
-                if (plugin.isHide) {
-                  plugin.show();
-                  return '弹幕已显示';
-                } else {
-                  plugin.hide();
-                  return '弹幕已隐藏';
-                }
-              }
-              return '弹幕功能未加载';
             },
           },
           {
