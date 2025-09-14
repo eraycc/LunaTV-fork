@@ -3,7 +3,15 @@
 import { AdminConfig } from './admin.types';
 import { KvrocksStorage } from './kvrocks.db';
 import { RedisStorage } from './redis.db';
-import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
+import {
+  ContentStat,
+  Favorite,
+  IStorage,
+  PlayRecord,
+  PlayStatsResult,
+  SkipConfig,
+  UserPlayStat,
+} from './types';
 import { UpstashRedisStorage } from './upstash.db';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
@@ -264,6 +272,68 @@ export class DbManager {
     if (typeof this.storage.clearExpiredCache === 'function') {
       await this.storage.clearExpiredCache(prefix);
     }
+  }
+
+  // ---------- 播放统计相关 ----------
+  async getPlayStats(): Promise<PlayStatsResult> {
+    if (typeof (this.storage as any).getPlayStats === 'function') {
+      return (this.storage as any).getPlayStats();
+    }
+
+    // 如果存储不支持统计功能，返回默认值
+    return {
+      totalUsers: 0,
+      totalWatchTime: 0,
+      totalPlays: 0,
+      avgWatchTimePerUser: 0,
+      avgPlaysPerUser: 0,
+      userStats: [],
+      topSources: [],
+      dailyStats: []
+    };
+  }
+
+  async getUserPlayStat(userName: string): Promise<UserPlayStat> {
+    if (typeof (this.storage as any).getUserPlayStat === 'function') {
+      return (this.storage as any).getUserPlayStat(userName);
+    }
+
+    // 如果存储不支持统计功能，返回默认值
+    return {
+      username: userName,
+      totalWatchTime: 0,
+      totalPlays: 0,
+      lastPlayTime: 0,
+      recentRecords: [],
+      avgWatchTime: 0,
+      mostWatchedSource: ''
+    };
+  }
+
+  async getContentStats(limit = 10): Promise<ContentStat[]> {
+    if (typeof (this.storage as any).getContentStats === 'function') {
+      return (this.storage as any).getContentStats(limit);
+    }
+
+    // 如果存储不支持统计功能，返回空数组
+    return [];
+  }
+
+  async updatePlayStatistics(
+    _userName: string,
+    _source: string,
+    _id: string,
+    _watchTime: number
+  ): Promise<void> {
+    if (typeof (this.storage as any).updatePlayStatistics === 'function') {
+      await (this.storage as any).updatePlayStatistics(_userName, _source, _id, _watchTime);
+    }
+  }
+
+  // 检查存储类型是否支持统计功能
+  isStatsSupported(): boolean {
+    const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+    return storageType !== 'localstorage';
   }
 }
 

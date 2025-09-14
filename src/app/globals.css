@@ -93,13 +93,13 @@ html:not(.dark) body {
   }
 }
 
-/* 隐藏所有滚动条（兼容 WebKit、Firefox、IE/Edge） */
-* {
+/* 隐藏所有滚动条（兼容 WebKit、Firefox、IE/Edge）- 排除ArtPlayer */
+*:not(.artplayer):not(.artplayer *) {
   -ms-overflow-style: none; /* IE & Edge */
   scrollbar-width: none; /* Firefox */
 }
 
-*::-webkit-scrollbar {
+*:not(.artplayer):not(.artplayer *)::webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
 
@@ -161,7 +161,7 @@ div[data-media-provider] video {
 }
 
 /* 隐藏移动端竖屏时的 pip 按钮 */
-@media (max-width: 768px) {
+@media (max-width: 480px) and (orientation: portrait) and (hover: none) and (pointer: coarse) {
   .art-control-pip {
     display: none !important;
   }
@@ -172,6 +172,61 @@ div[data-media-provider] video {
 
   .art-control-volume {
     display: none !important;
+  }
+}
+
+/* 修复音量控制hover区域 - 精确优化版本 */
+.art-control-volume {
+  position: relative !important;
+}
+
+/* 精确控制音量按钮的hover检测区域 */
+.art-control-volume::before {
+  content: '';
+  position: absolute;
+  top: -40px; /* 减少向上扩展，只扩展40px到音量滑条区域 */
+  left: -8px;  /* 减少左右扩展 */
+  right: -8px;
+  bottom: -2px; /* 减少向下扩展 */
+  z-index: -1;
+  pointer-events: auto;
+}
+
+/* 当面板本身被hover时也要保持显示 */
+.art-volume-panel:hover {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  pointer-events: auto !important;
+}
+
+/* 强化原有的hover规则 */
+.art-control-volume:hover .art-volume-panel {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  pointer-events: auto !important;
+  transition: all 0.1s ease !important; /* 更快的响应 */
+}
+
+/* 修复移动端弹幕面板定位问题 - 根据不同挂载位置处理 */
+@media (max-width: 768px) {
+  /* 当弹幕插件挂载到控制栏中心时（横屏，宽度>=512px） */
+  .art-controls-center .artplayer-plugin-danmuku .apd-config-panel,
+  .art-controls-center .artplayer-plugin-danmuku .apd-style-panel {
+    position: absolute !important; /* 加上这个关键属性！ */
+    left: 10% !important;
+    transform: translateX(-50%) !important;
+    right: auto !important;
+    max-width: calc(100vw - 40px) !important;
+  }
+
+  /* 当弹幕插件挂载到播放器容器时（竖屏，宽度<512px） */
+  .art-video-player .artplayer-plugin-danmuku .apd-config-panel,
+  .art-video-player .artplayer-plugin-danmuku .apd-style-panel {
+    position: absolute !important;
+    left: 50% !important; /* 竖屏时居中 */
+    transform: translateX(-50%) !important;
+    right: auto !important;
+    max-width: calc(100vw - 40px) !important;
   }
 }
 

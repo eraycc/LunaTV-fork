@@ -85,7 +85,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const cacheType = searchParams.get('type'); // all, douban, danmu, netdisk, youtube, search
+  const cacheType = searchParams.get('type'); // all, douban, shortdrama, danmu, netdisk, youtube, search
   
   try {
     let clearedCount = 0;
@@ -95,6 +95,11 @@ export async function DELETE(request: NextRequest) {
       case 'douban':
         clearedCount = await clearDoubanCache();
         message = `已清理 ${clearedCount} 个豆瓣缓存项`;
+        break;
+
+      case 'shortdrama':
+        clearedCount = await clearShortdramaCache();
+        message = `已清理 ${clearedCount} 个短剧缓存项`;
         break;
       
       case 'danmu':
@@ -162,6 +167,7 @@ async function getCacheStats() {
     console.warn('⚠️ 数据库缓存统计失败，返回空统计');
     return {
       douban: { count: 0, size: 0, types: {} },
+      shortdrama: { count: 0, size: 0, types: {} },
       danmu: { count: 0, size: 0 },
       netdisk: { count: 0, size: 0 },
       youtube: { count: 0, size: 0 },
@@ -173,9 +179,10 @@ async function getCacheStats() {
       note: '数据库统计失败',
       formattedSizes: {
         douban: '0 B',
+        shortdrama: '0 B',
         danmu: '0 B',
         netdisk: '0 B',
-        youtube: '0 B', 
+        youtube: '0 B',
         search: '0 B',
         other: '0 B',
         total: '0 B'
@@ -205,6 +212,29 @@ async function clearDoubanCache(): Promise<number> {
       clearedCount++;
     });
     console.log(`🗑️ localStorage中清理了 ${keys.length} 个豆瓣缓存项`);
+  }
+
+  return clearedCount;
+}
+
+// 清理短剧缓存
+async function clearShortdramaCache(): Promise<number> {
+  let clearedCount = 0;
+
+  // 清理数据库中的短剧缓存
+  const dbCleared = await DatabaseCacheManager.clearCacheByType('shortdrama');
+  clearedCount += dbCleared;
+
+  // 清理localStorage中的短剧缓存（兜底）
+  if (typeof localStorage !== 'undefined') {
+    const keys = Object.keys(localStorage).filter(key =>
+      key.startsWith('shortdrama-')
+    );
+    keys.forEach(key => {
+      localStorage.removeItem(key);
+      clearedCount++;
+    });
+    console.log(`🗑️ localStorage中清理了 ${keys.length} 个短剧缓存项`);
   }
 
   return clearedCount;
@@ -355,12 +385,13 @@ async function clearExpiredCache(): Promise<number> {
 // 清理所有缓存
 async function clearAllCache(): Promise<number> {
   const doubanCount = await clearDoubanCache();
+  const shortdramaCount = await clearShortdramaCache();
   const danmuCount = await clearDanmuCache();
   const netdiskCount = await clearNetdiskCache();
   const youtubeCount = await clearYouTubeCache();
   const searchCount = await clearSearchCache();
-  
-  return doubanCount + danmuCount + netdiskCount + youtubeCount + searchCount;
+
+  return doubanCount + shortdramaCount + danmuCount + netdiskCount + youtubeCount + searchCount;
 }
 
 // 格式化字节大小

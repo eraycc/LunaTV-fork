@@ -3,7 +3,15 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
-import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
+import {
+  ContentStat,
+  Favorite,
+  IStorage,
+  PlayRecord,
+  PlayStatsResult,
+  SkipConfig,
+  UserPlayStat,
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -143,9 +151,11 @@ export function createRedisClient(config: RedisConnectionConfig, globalSymbol: s
 // 抽象基类，包含所有通用的Redis操作逻辑
 export abstract class BaseRedisStorage implements IStorage {
   protected client: RedisClientType;
+  protected config: RedisConnectionConfig;
   protected withRetry: <T>(operation: () => Promise<T>, maxRetries?: number) => Promise<T>;
 
   constructor(config: RedisConnectionConfig, globalSymbol: symbol) {
+    this.config = config; // 保存配置
     this.client = createRedisClient(config, globalSymbol);
     this.withRetry = createRetryWrapper(config.clientName, () => this.client);
   }
@@ -470,18 +480,47 @@ export abstract class BaseRedisStorage implements IStorage {
   }
 
   async getCache(key: string): Promise<any | null> {
-    const val = await this.withRetry(() => this.client.get(this.cacheKey(key)));
-    return val ? JSON.parse(val) : null;
+    try {
+      const val = await this.withRetry(() => this.client.get(this.cacheKey(key)));
+      if (!val) return null;
+
+      // 智能处理返回值：兼容不同Redis客户端的行为
+      if (typeof val === 'string') {
+        // 检查是否是HTML错误页面
+        if (val.trim().startsWith('<!DOCTYPE') || val.trim().startsWith('<html')) {
+          console.error(`${this.config.clientName} returned HTML instead of JSON. Connection issue detected.`);
+          return null;
+        }
+
+        try {
+          return JSON.parse(val);
+        } catch (parseError) {
+          console.warn(`${this.config.clientName} JSON解析失败，返回原字符串 (key: ${key}):`, parseError);
+          return val; // 解析失败返回原字符串
+        }
+      } else {
+        // 某些Redis客户端可能直接返回解析后的对象
+        return val;
+      }
+    } catch (error: any) {
+      console.error(`${this.config.clientName} getCache error (key: ${key}):`, error);
+      return null;
+    }
   }
 
   async setCache(key: string, data: any, expireSeconds?: number): Promise<void> {
-    const cacheKey = this.cacheKey(key);
-    const value = JSON.stringify(data);
-    
-    if (expireSeconds) {
-      await this.withRetry(() => this.client.setEx(cacheKey, expireSeconds, value));
-    } else {
-      await this.withRetry(() => this.client.set(cacheKey, value));
+    try {
+      const cacheKey = this.cacheKey(key);
+      const value = JSON.stringify(data);
+
+      if (expireSeconds) {
+        await this.withRetry(() => this.client.setEx(cacheKey, expireSeconds, value));
+      } else {
+        await this.withRetry(() => this.client.set(cacheKey, value));
+      }
+    } catch (error) {
+      console.error(`${this.config.clientName} setCache error (key: ${key}):`, error);
+      throw error; // 重新抛出错误以便上层处理
     }
   }
 
@@ -494,10 +533,252 @@ export abstract class BaseRedisStorage implements IStorage {
     // 可以根据需要实现特定前缀的缓存清理
     const pattern = prefix ? `cache:${prefix}*` : 'cache:*';
     const keys = await this.withRetry(() => this.client.keys(pattern));
-    
+
     if (keys.length > 0) {
       await this.withRetry(() => this.client.del(keys));
       console.log(`Cleared ${keys.length} cache entries with pattern: ${pattern}`);
+    }
+  }
+
+  // ---------- 播放统计相关 ----------
+  private playStatsKey() {
+    return 'global:play_stats';
+  }
+
+  private userStatsKey(userName: string) {
+    return `u:${userName}:stats`;
+  }
+
+  private contentStatsKey(source: string, id: string) {
+    return `content:stats:${source}+${id}`;
+  }
+
+  // 获取全站播放统计
+  async getPlayStats(): Promise<PlayStatsResult> {
+    try {
+      // 尝试从缓存获取
+      const cached = await this.getCache('play_stats_summary');
+      if (cached) {
+        return cached;
+      }
+
+      // 重新计算统计数据
+      const allUsers = await this.getAllUsers();
+
+      const userStats: UserPlayStat[] = [];
+      let totalWatchTime = 0;
+      let totalPlays = 0;
+
+      // 收集所有用户统计
+      for (const username of allUsers) {
+        const userStat = await this.getUserPlayStat(username);
+        userStats.push(userStat);
+        totalWatchTime += userStat.totalWatchTime;
+        totalPlays += userStat.totalPlays;
+      }
+
+      // 计算热门来源
+      const sourceMap = new Map<string, number>();
+      for (const user of userStats) {
+        for (const record of user.recentRecords) {
+          const count = sourceMap.get(record.source_name) || 0;
+          sourceMap.set(record.source_name, count + 1);
+        }
+      }
+
+      const topSources = Array.from(sourceMap.entries())
+        .map(([source, count]) => ({ source, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+      // 生成近7天统计（简化版本）
+      const dailyStats = [];
+      const now = Date.now();
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now - i * 24 * 60 * 60 * 1000);
+        dailyStats.push({
+          date: date.toISOString().split('T')[0],
+          watchTime: Math.floor(totalWatchTime / 7), // 简化计算
+          plays: Math.floor(totalPlays / 7)
+        });
+      }
+
+      const result: PlayStatsResult = {
+        totalUsers: allUsers.length,
+        totalWatchTime,
+        totalPlays,
+        avgWatchTimePerUser: allUsers.length > 0 ? totalWatchTime / allUsers.length : 0,
+        avgPlaysPerUser: allUsers.length > 0 ? totalPlays / allUsers.length : 0,
+        userStats: userStats.sort((a, b) => b.totalWatchTime - a.totalWatchTime),
+        topSources,
+        dailyStats
+      };
+
+      // 缓存结果30分钟
+      await this.setCache('play_stats_summary', result, 1800);
+
+      return result;
+    } catch (error) {
+      console.error('获取播放统计失败:', error);
+      return {
+        totalUsers: 0,
+        totalWatchTime: 0,
+        totalPlays: 0,
+        avgWatchTimePerUser: 0,
+        avgPlaysPerUser: 0,
+        userStats: [],
+        topSources: [],
+        dailyStats: []
+      };
+    }
+  }
+
+  // 获取用户播放统计
+  async getUserPlayStat(userName: string): Promise<UserPlayStat> {
+    try {
+      // 获取用户所有播放记录
+      const playRecords = await this.getAllPlayRecords(userName);
+      const records = Object.values(playRecords);
+
+      if (records.length === 0) {
+        return {
+          username: userName,
+          totalWatchTime: 0,
+          totalPlays: 0,
+          lastPlayTime: 0,
+          recentRecords: [],
+          avgWatchTime: 0,
+          mostWatchedSource: ''
+        };
+      }
+
+      // 计算统计数据
+      const totalWatchTime = records.reduce((sum, record) => sum + (record.play_time || 0), 0);
+      const totalPlays = records.length;
+      const lastPlayTime = Math.max(...records.map(r => r.save_time || 0));
+
+      // 最近10条记录，按时间排序
+      const recentRecords = records
+        .sort((a, b) => (b.save_time || 0) - (a.save_time || 0))
+        .slice(0, 10);
+
+      // 平均观看时长
+      const avgWatchTime = totalPlays > 0 ? totalWatchTime / totalPlays : 0;
+
+      // 最常观看的来源
+      const sourceMap = new Map<string, number>();
+      records.forEach(record => {
+        const sourceName = record.source_name || '未知来源';
+        const count = sourceMap.get(sourceName) || 0;
+        sourceMap.set(sourceName, count + 1);
+      });
+
+      const mostWatchedSource = sourceMap.size > 0
+        ? Array.from(sourceMap.entries()).reduce((a, b) => a[1] > b[1] ? a : b)[0]
+        : '';
+
+      return {
+        username: userName,
+        totalWatchTime,
+        totalPlays,
+        lastPlayTime,
+        recentRecords,
+        avgWatchTime,
+        mostWatchedSource
+      };
+    } catch (error) {
+      console.error(`获取用户 ${userName} 统计失败:`, error);
+      return {
+        username: userName,
+        totalWatchTime: 0,
+        totalPlays: 0,
+        lastPlayTime: 0,
+        recentRecords: [],
+        avgWatchTime: 0,
+        mostWatchedSource: ''
+      };
+    }
+  }
+
+  // 获取内容热度统计
+  async getContentStats(limit = 10): Promise<ContentStat[]> {
+    try {
+      // 获取所有用户
+      const allUsers = await this.getAllUsers();
+      const contentMap = new Map<string, {
+        record: PlayRecord;
+        playCount: number;
+        totalWatchTime: number;
+        users: Set<string>;
+      }>();
+
+      // 收集所有播放记录
+      for (const username of allUsers) {
+        const playRecords = await this.getAllPlayRecords(username);
+
+        Object.entries(playRecords).forEach(([key, record]) => {
+          const contentKey = key; // source+id
+
+          if (!contentMap.has(contentKey)) {
+            contentMap.set(contentKey, {
+              record,
+              playCount: 0,
+              totalWatchTime: 0,
+              users: new Set()
+            });
+          }
+
+          const content = contentMap.get(contentKey)!;
+          content.playCount++;
+          content.totalWatchTime += record.play_time;
+          content.users.add(username);
+        });
+      }
+
+      // 转换为ContentStat数组并排序
+      const contentStats: ContentStat[] = Array.from(contentMap.entries())
+        .map(([key, data]) => {
+          const [source, id] = key.split('+');
+          return {
+            source,
+            id,
+            title: data.record.title,
+            source_name: data.record.source_name,
+            cover: data.record.cover,
+            year: data.record.year,
+            playCount: data.playCount,
+            totalWatchTime: data.totalWatchTime,
+            averageWatchTime: data.playCount > 0 ? data.totalWatchTime / data.playCount : 0,
+            lastPlayed: data.record.save_time,
+            uniqueUsers: data.users.size
+          };
+        })
+        .sort((a, b) => b.playCount - a.playCount)
+        .slice(0, limit);
+
+      return contentStats;
+    } catch (error) {
+      console.error('获取内容统计失败:', error);
+      return [];
+    }
+  }
+
+  // 更新播放统计（当用户播放时调用）
+  async updatePlayStatistics(
+    _userName: string,
+    _source: string,
+    _id: string,
+    _watchTime: number
+  ): Promise<void> {
+    try {
+      // 清除全站统计缓存，下次查询时重新计算
+      await this.deleteCache('play_stats_summary');
+
+      // 这里可以添加更多实时统计更新逻辑
+      // 比如更新用户统计缓存、内容热度等
+      // 暂时只是清除缓存，实际统计在查询时重新计算
+    } catch (error) {
+      console.error('更新播放统计失败:', error);
     }
   }
 }

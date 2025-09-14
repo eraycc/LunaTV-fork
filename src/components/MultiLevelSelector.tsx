@@ -18,13 +18,11 @@ interface MultiLevelCategory {
 interface MultiLevelSelectorProps {
   onChange: (values: Record<string, string>) => void;
   contentType?: 'movie' | 'tv' | 'show' | 'anime-tv' | 'anime-movie';
-  initialValues?: Record<string, string>; // 添加初始值支持
 }
 
 const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
   onChange,
   contentType = 'movie',
-  initialValues = {},
 }) => {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{
@@ -32,14 +30,9 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
     y: number;
     width: number;
   }>({ x: 0, y: 0, width: 0 });
-  const [values, setValues] = useState<Record<string, string>>(initialValues);
+  const [values, setValues] = useState<Record<string, string>>({});
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // 监听initialValues变化，更新内部状态
-  useEffect(() => {
-    setValues(initialValues);
-  }, [initialValues]);
 
   // 根据内容类型获取对应的类型选项
   const getTypeOptions = (

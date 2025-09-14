@@ -61,6 +61,7 @@ export class DatabaseCacheManager {
 
     const stats = {
       douban: { count: 0, size: 0, types: {} as Record<string, number> },
+      shortdrama: { count: 0, size: 0, types: {} as Record<string, number> },
       danmu: { count: 0, size: 0 },
       netdisk: { count: 0, size: 0 },
       youtube: { count: 0, size: 0 },
@@ -194,7 +195,7 @@ export class DatabaseCacheManager {
         const key = fullKey.replace('cache:', ''); // 移除前缀
         const data = values[idx];
         if (!data) return;
-        
+
         // 计算数据大小 - 智能处理不同数据类型
         let size = 0;
         if (typeof data === 'string') {
@@ -205,14 +206,21 @@ export class DatabaseCacheManager {
         } else {
           size = String(data).length;
         }
-        
+
         if (key.startsWith('douban-')) {
           stats.douban.count++;
           stats.douban.size += size;
-          
+
           const type = key.split('-')[1];
           stats.douban.types[type] = (stats.douban.types[type] || 0) + 1;
-        } 
+        }
+        else if (key.startsWith('shortdrama-')) {
+          stats.shortdrama.count++;
+          stats.shortdrama.size += size;
+
+          const type = key.split('-')[1];
+          stats.shortdrama.types[type] = (stats.shortdrama.types[type] || 0) + 1;
+        }
         else if (key.startsWith('danmu-cache') || key === 'lunatv_danmu_cache') {
           stats.danmu.count++;
           stats.danmu.size += size;
@@ -226,7 +234,7 @@ export class DatabaseCacheManager {
           stats.youtube.size += size;
         }
         // 移除了search和other分类，只统计明确的缓存类型
-        
+
         stats.total.count++;
         stats.total.size += size;
       });
@@ -254,7 +262,8 @@ export class DatabaseCacheManager {
         note: '数据来源：Redis兼容数据库（KVRocks/Upstash/Redis）',
         formattedSizes: {
           douban: formatBytes(redisStats.douban.size),
-          danmu: formatBytes(redisStats.danmu.size), 
+          shortdrama: formatBytes(redisStats.shortdrama.size),
+          danmu: formatBytes(redisStats.danmu.size),
           netdisk: formatBytes(redisStats.netdisk.size),
           youtube: formatBytes(redisStats.youtube.size),
           total: formatBytes(redisStats.total.size)
@@ -265,6 +274,7 @@ export class DatabaseCacheManager {
     // 如果 Redis数据库 不可用，使用 localStorage 作为备用
     const stats = {
       douban: { count: 0, size: 0, types: {} as Record<string, number> },
+      shortdrama: { count: 0, size: 0, types: {} as Record<string, number> },
       danmu: { count: 0, size: 0 },
       netdisk: { count: 0, size: 0 },
       youtube: { count: 0, size: 0 },
@@ -273,31 +283,39 @@ export class DatabaseCacheManager {
 
     // 从localStorage统计（备用数据源）
     if (typeof localStorage !== 'undefined') {
-      const keys = Object.keys(localStorage).filter(key => 
-        key.startsWith('douban-') || 
-        key.startsWith('danmu-cache') || 
+      const keys = Object.keys(localStorage).filter(key =>
+        key.startsWith('douban-') ||
+        key.startsWith('shortdrama-') ||
+        key.startsWith('danmu-cache') ||
         key.startsWith('netdisk-search') ||
         key.startsWith('youtube-search') ||
-        key.startsWith('search-') || 
+        key.startsWith('search-') ||
         key.startsWith('cache-') ||
         key === 'lunatv_danmu_cache'
       );
-      
+
       console.log(`📊 localStorage中找到 ${keys.length} 个相关缓存键`);
-      
+
       keys.forEach(key => {
         const data = localStorage.getItem(key);
         if (!data) return;
-        
+
         const size = data.length;
-        
+
         if (key.startsWith('douban-')) {
           stats.douban.count++;
           stats.douban.size += size;
-          
+
           const type = key.split('-')[1];
           stats.douban.types[type] = (stats.douban.types[type] || 0) + 1;
-        } 
+        }
+        else if (key.startsWith('shortdrama-')) {
+          stats.shortdrama.count++;
+          stats.shortdrama.size += size;
+
+          const type = key.split('-')[1];
+          stats.shortdrama.types[type] = (stats.shortdrama.types[type] || 0) + 1;
+        }
         else if (key.startsWith('danmu-cache') || key === 'lunatv_danmu_cache') {
           stats.danmu.count++;
           stats.danmu.size += size;
@@ -311,7 +329,7 @@ export class DatabaseCacheManager {
           stats.youtube.size += size;
         }
         // 移除了search和other分类，只统计明确的缓存类型
-        
+
         stats.total.count++;
         stats.total.size += size;
       });
@@ -324,7 +342,8 @@ export class DatabaseCacheManager {
       note: 'Redis数据库不可用，使用localStorage作为备用数据源',
       formattedSizes: {
         douban: formatBytes(stats.douban.size),
-        danmu: formatBytes(stats.danmu.size), 
+        shortdrama: formatBytes(stats.shortdrama.size),
+        danmu: formatBytes(stats.danmu.size),
         netdisk: formatBytes(stats.netdisk.size),
         youtube: formatBytes(stats.youtube.size),
         total: formatBytes(stats.total.size)
@@ -333,7 +352,7 @@ export class DatabaseCacheManager {
   }
 
   // 清理指定类型的缓存
-  static async clearCacheByType(type: 'douban' | 'danmu' | 'netdisk' | 'youtube'): Promise<number> {
+  static async clearCacheByType(type: 'douban' | 'shortdrama' | 'danmu' | 'netdisk' | 'youtube'): Promise<number> {
     let clearedCount = 0;
     
     try {
@@ -341,6 +360,21 @@ export class DatabaseCacheManager {
         case 'douban':
           await db.clearExpiredCache('douban-');
           console.log('🗑️ 豆瓣缓存清理完成');
+          break;
+        case 'shortdrama':
+          await db.clearExpiredCache('shortdrama-');
+          // 清理localStorage中的短剧缓存（兜底）
+          if (typeof localStorage !== 'undefined') {
+            const keys = Object.keys(localStorage).filter(key =>
+              key.startsWith('shortdrama-')
+            );
+            keys.forEach(key => {
+              localStorage.removeItem(key);
+              clearedCount++;
+            });
+            console.log(`🗑️ localStorage中清理了 ${keys.length} 个短剧缓存项`);
+          }
+          console.log('🗑️ 短剧缓存清理完成');
           break;
         case 'danmu':
           await db.clearExpiredCache('danmu-cache');

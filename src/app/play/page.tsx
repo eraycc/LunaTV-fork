@@ -195,7 +195,7 @@ function PlayPageClient() {
   // 加载详情（豆瓣或bangumi）
   useEffect(() => {
     const loadMovieDetails = async () => {
-      if (!videoDoubanId || videoDoubanId === 0) {
+      if (!videoDoubanId || videoDoubanId === 0 || detail?.source === 'shortdrama') {
         return;
       }
 
@@ -864,7 +864,7 @@ function PlayPageClient() {
   };
 
   // 更新视频地址
-  const updateVideoUrl = (
+  const updateVideoUrl = async (
     detailData: SearchResult | null,
     episodeIndex: number
   ) => {
@@ -876,9 +876,38 @@ function PlayPageClient() {
       setVideoUrl('');
       return;
     }
-    const newUrl = detailData?.episodes[episodeIndex] || '';
-    if (newUrl !== videoUrl) {
-      setVideoUrl(newUrl);
+
+    const episodeData = detailData.episodes[episodeIndex];
+
+    // 检查是否为短剧格式
+    if (episodeData && episodeData.startsWith('shortdrama:')) {
+      try {
+        const [, videoId, episode] = episodeData.split(':');
+        const response = await fetch(
+          `/api/shortdrama/parse?id=${videoId}&episode=${episode}`
+        );
+
+        if (response.ok) {
+          const result = await response.json();
+          const newUrl = result.url || '';
+          if (newUrl !== videoUrl) {
+            setVideoUrl(newUrl);
+          }
+        } else {
+          setError('短剧解析失败');
+          setVideoUrl('');
+        }
+      } catch (err) {
+        console.error('短剧URL解析失败:', err);
+        setError('短剧解析失败');
+        setVideoUrl('');
+      }
+    } else {
+      // 普通视频格式
+      const newUrl = episodeData || '';
+      if (newUrl !== videoUrl) {
+        setVideoUrl(newUrl);
+      }
     }
   };
 
@@ -1460,9 +1489,19 @@ function PlayPageClient() {
       id: string
     ): Promise<SearchResult[]> => {
       try {
-        const detailResponse = await fetch(
-          `/api/detail?source=${source}&id=${id}`
-        );
+        let detailResponse;
+
+        // 判断是否为短剧源
+        if (source === 'shortdrama') {
+          detailResponse = await fetch(
+            `/api/shortdrama/detail?id=${id}&episode=1`
+          );
+        } else {
+          detailResponse = await fetch(
+            `/api/detail?source=${source}&id=${id}`
+          );
+        }
+
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
         }
@@ -1561,15 +1600,23 @@ function PlayPageClient() {
           : '🔍 正在搜索播放源...'
       );
 
-      let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
-      if (
-        currentSource &&
-        currentId &&
-        !sourcesInfo.some(
-          (source) => source.source === currentSource && source.id === currentId
-        )
-      ) {
+      let sourcesInfo: SearchResult[] = [];
+
+      // 对于短剧，直接获取详情，跳过搜索
+      if (currentSource === 'shortdrama' && currentId) {
         sourcesInfo = await fetchSourceDetail(currentSource, currentId);
+      } else {
+        // 其他情况先搜索
+        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
+        if (
+          currentSource &&
+          currentId &&
+          !sourcesInfo.some(
+            (source) => source.source === currentSource && source.id === currentId
+          )
+        ) {
+          sourcesInfo = await fetchSourceDetail(currentSource, currentId);
+        }
       }
       if (sourcesInfo.length === 0) {
         setError('未找到匹配结果');
@@ -2839,48 +2886,20 @@ function PlayPageClient() {
               
               let isConfigVisible = false;
               
-              // 弹幕面板位置修正函数 - 完全模仿ArtPlayer原版位置算法
+              // 弹幕面板位置修正函数 - 简化版本
               const adjustPanelPosition = () => {
                 const player = document.querySelector('.artplayer');
                 if (!player || !configButton || !configPanel) return;
-                
+
                 try {
                   const panelElement = configPanel as HTMLElement;
-                  
-                  // 确保面板先恢复默认位置，模拟CSS默认行为
-                  panelElement.style.left = '0px';
+
+                  // 始终清除内联样式，使用CSS默认定位
+                  panelElement.style.left = '';
                   panelElement.style.right = '';
                   panelElement.style.transform = '';
-                  
-                  // 强制重排以获取准确的位置信息
-                  panelElement.offsetHeight;
-                  
-                  // 获取各元素的位置信息 - 严格按照ArtPlayer原版算法
-                  const controlRect = configButton.getBoundingClientRect();
-                  const panelRect = configPanel.getBoundingClientRect();
-                  const playerRect = player.getBoundingClientRect();
-                  
-                  // ArtPlayer原版位置计算算法
-                  const half = panelRect.width / 2 - controlRect.width / 2;
-                  const left = playerRect.left - (controlRect.left - half);
-                  const right = controlRect.right + half - playerRect.right;
-                  
-                  // 应用位置计算结果
-                  if (left > 0) {
-                    panelElement.style.left = `${-half + left}px`;
-                  } else if (right > 0) {
-                    panelElement.style.left = `${-half - right}px`;
-                  } else {
-                    panelElement.style.left = `${-half}px`;
-                  }
-                  
-                  console.log('弹幕面板位置已修正:', {
-                    controlRect: controlRect.left,
-                    panelWidth: panelRect.width,
-                    playerLeft: playerRect.left,
-                    half,
-                    finalLeft: panelElement.style.left
-                  });
+
+                  console.log('弹幕面板：使用CSS默认定位，自动适配屏幕方向');
                 } catch (error) {
                   console.warn('弹幕面板位置调整失败:', error);
                 }
@@ -2894,21 +2913,17 @@ function PlayPageClient() {
                 isConfigVisible = !isConfigVisible;
                 
                 if (isConfigVisible) {
-                  (configPanel as HTMLElement).style.opacity = '1';
-                  (configPanel as HTMLElement).style.pointerEvents = 'all';
-                  // 显示后延迟调整位置，确保DOM完全更新
-                  setTimeout(() => {
-                    adjustPanelPosition();
-                  }, 50);
+                  (configPanel as HTMLElement).style.display = 'block';
+                  // 显示后立即调整位置
+                  setTimeout(adjustPanelPosition, 10);
                   console.log('移动端弹幕配置面板：显示');
                 } else {
-                  (configPanel as HTMLElement).style.opacity = '0';
-                  (configPanel as HTMLElement).style.pointerEvents = 'none';
+                  (configPanel as HTMLElement).style.display = 'none';
                   console.log('移动端弹幕配置面板：隐藏');
                 }
               });
               
-              // 监听ArtPlayer的resize事件，在每次resize后重新调整弹幕面板位置
+              // 监听ArtPlayer的resize事件
               if (artPlayerRef.current) {
                 artPlayerRef.current.on('resize', () => {
                   if (isConfigVisible) {
@@ -2919,29 +2934,6 @@ function PlayPageClient() {
                 console.log('已监听ArtPlayer resize事件，实现自动适配');
               }
               
-              // 监听播放器设置面板的变化，确保弹幕菜单位置正确
-              const observePlayerChanges = () => {
-                const playerElement = document.querySelector('.artplayer');
-                if (!playerElement) return () => { /* no-op */ };
-                
-                const observer = new MutationObserver(() => {
-                  if (isConfigVisible) {
-                    setTimeout(adjustPanelPosition, 100);
-                  }
-                });
-                
-                observer.observe(playerElement, { 
-                  childList: true, 
-                  subtree: true, 
-                  attributes: true, 
-                  attributeFilter: ['class', 'style'] 
-                });
-                
-                return () => observer.disconnect();
-              };
-              
-              const disconnectObserver = observePlayerChanges();
-              
               // 额外监听屏幕方向变化事件，确保完全自动适配
               const handleOrientationChange = () => {
                 if (isConfigVisible) {
@@ -2949,32 +2941,99 @@ function PlayPageClient() {
                   setTimeout(adjustPanelPosition, 100); // 稍长延迟等待方向变化完成
                 }
               };
-              
+
               window.addEventListener('orientationchange', handleOrientationChange);
               window.addEventListener('resize', handleOrientationChange);
-              
+
               // 清理函数
               const _cleanup = () => {
                 window.removeEventListener('orientationchange', handleOrientationChange);
                 window.removeEventListener('resize', handleOrientationChange);
-                disconnectObserver(); // 断开DOM变化观察器
               };
-              
+
               // 点击其他地方自动隐藏
               document.addEventListener('click', (e) => {
-                if (isConfigVisible && 
-                    !configButton.contains(e.target as Node) && 
+                if (isConfigVisible &&
+                    !configButton.contains(e.target as Node) &&
                     !configPanel.contains(e.target as Node)) {
                   isConfigVisible = false;
                   (configPanel as HTMLElement).style.display = 'none';
                   console.log('点击外部区域，隐藏弹幕配置面板');
                 }
               });
-              
+
               console.log('移动端弹幕配置切换功能已激活');
             } else {
-              // 桌面端：保持原有hover机制
-              console.log('桌面端保持原有hover机制');
+              // 桌面端：使用hover延迟交互，与移动端保持一致
+              console.log('为桌面端添加弹幕配置按钮hover延迟交互功能');
+
+              let isConfigVisible = false;
+              let showTimer: NodeJS.Timeout | null = null;
+              let hideTimer: NodeJS.Timeout | null = null;
+
+              const showPanel = () => {
+                if (hideTimer) {
+                  clearTimeout(hideTimer);
+                  hideTimer = null;
+                }
+
+                if (!isConfigVisible) {
+                  isConfigVisible = true;
+                  (configPanel as HTMLElement).style.setProperty('display', 'block', 'important');
+                  // 添加show类来触发动画
+                  setTimeout(() => {
+                    (configPanel as HTMLElement).classList.add('show');
+                  }, 10);
+                  console.log('桌面端弹幕配置面板：显示');
+                }
+              };
+
+              const hidePanel = () => {
+                if (showTimer) {
+                  clearTimeout(showTimer);
+                  showTimer = null;
+                }
+
+                if (isConfigVisible) {
+                  isConfigVisible = false;
+                  (configPanel as HTMLElement).classList.remove('show');
+                  // 等待动画完成后隐藏
+                  setTimeout(() => {
+                    (configPanel as HTMLElement).style.setProperty('display', 'none', 'important');
+                  }, 200);
+                  console.log('桌面端弹幕配置面板：隐藏');
+                }
+              };
+
+              // 鼠标进入按钮或面板区域
+              const handleMouseEnter = () => {
+                if (hideTimer) {
+                  clearTimeout(hideTimer);
+                  hideTimer = null;
+                }
+
+                showTimer = setTimeout(showPanel, 300); // 300ms延迟显示
+              };
+
+              // 鼠标离开按钮或面板区域
+              const handleMouseLeave = () => {
+                if (showTimer) {
+                  clearTimeout(showTimer);
+                  showTimer = null;
+                }
+
+                hideTimer = setTimeout(hidePanel, 500); // 500ms延迟隐藏
+              };
+
+              // 为按钮添加hover事件
+              configButton.addEventListener('mouseenter', handleMouseEnter);
+              configButton.addEventListener('mouseleave', handleMouseLeave);
+
+              // 为面板添加hover事件
+              configPanel.addEventListener('mouseenter', handleMouseEnter);
+              configPanel.addEventListener('mouseleave', handleMouseLeave);
+
+              console.log('桌面端弹幕配置hover延迟交互功能已激活');
             }
           }, 2000); // 延迟2秒确保弹幕插件完全初始化
         };
@@ -3833,7 +3892,7 @@ function PlayPageClient() {
               </div>
 
               {/* 详细信息（豆瓣或bangumi） */}
-              {videoDoubanId && videoDoubanId !== 0 && (
+              {currentSource !== 'shortdrama' && videoDoubanId && videoDoubanId !== 0 && detail && detail.source !== 'shortdrama' && (
                 <div className='mb-4 flex-shrink-0'>
                   {/* 加载状态 */}
                   {(loadingMovieDetails || loadingBangumiDetails) && !movieDetails && !bangumiDetails && (
@@ -3847,7 +3906,7 @@ function PlayPageClient() {
                   {bangumiDetails && (
                     <div className='space-y-2 text-sm'>
                       {/* Bangumi评分 */}
-                      {bangumiDetails.rating?.score && (
+                      {bangumiDetails.rating?.score && parseFloat(bangumiDetails.rating.score) > 0 && (
                         <div className='flex items-center gap-2'>
                           <span className='font-semibold text-gray-700 dark:text-gray-300'>Bangumi评分: </span>
                           <div className='flex items-center'>
@@ -3925,7 +3984,7 @@ function PlayPageClient() {
                   {movieDetails && (
                     <div className='space-y-2 text-sm'>
                       {/* 豆瓣评分 */}
-                      {movieDetails.rate && (
+                      {movieDetails.rate && movieDetails.rate !== "0" && parseFloat(movieDetails.rate) > 0 && (
                         <div className='flex items-center gap-2'>
                           <span className='font-semibold text-gray-700 dark:text-gray-300'>豆瓣评分: </span>
                           <div className='flex items-center'>
@@ -4026,6 +4085,29 @@ function PlayPageClient() {
                   )}
                 </div>
               )}
+
+              {/* 短剧详细信息 */}
+              {detail?.source === 'shortdrama' && (
+                <div className='mb-4 flex-shrink-0'>
+                  <div className='space-y-2 text-sm'>
+                    {/* 集数信息 */}
+                    {detail?.episodes && detail.episodes.length > 0 && (
+                      <div className='flex flex-wrap gap-2'>
+                        <span className='bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full text-xs'>
+                          共{detail.episodes.length}集
+                        </span>
+                        <span className='bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded-full text-xs'>
+                          短剧
+                        </span>
+                        <span className='bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200 px-2 py-1 rounded-full text-xs'>
+                          {detail.year}年
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* 剧情简介 */}
               {(detail?.desc || bangumiDetails?.summary) && (
                 <div
