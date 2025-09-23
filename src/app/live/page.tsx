@@ -1081,6 +1081,34 @@ function LivePageClient() {
         return;
       }
 
+      // v1.6.13 增强：处理片段解析错误（针对initPTS修复）
+      if (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
+        console.log('直播片段解析错误，尝试重新加载...');
+        // 重新开始加载，利用v1.6.13的initPTS修复
+        try {
+          hls.startLoad();
+        } catch (e) {
+          console.warn('重新加载失败:', e);
+        }
+        return;
+      }
+
+      // v1.6.13 增强：处理直播中的时间戳错误（直播回搜修复）
+      if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR &&
+          data.err && data.err.message &&
+          data.err.message.includes('timestamp')) {
+        console.log('直播时间戳错误，利用v1.6.13修复重新加载...');
+        try {
+          // 对于直播，直接重新开始加载最新片段
+          hls.trigger(Hls.Events.BUFFER_RESET, undefined);
+          hls.startLoad();
+        } catch (e) {
+          console.warn('直播缓冲区重置失败:', e);
+          hls.startLoad();
+        }
+        return;
+      }
+
       // 处理其他特定错误类型
       if (data.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR) {
         console.error('Incompatible codecs error - fatal');

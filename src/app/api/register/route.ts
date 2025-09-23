@@ -140,6 +140,7 @@ export async function POST(req: NextRequest) {
       const newUser = {
         username: username,
         role: 'user' as const,
+        createdAt: Date.now(), // 设置注册时间戳
       };
 
       config.UserConfig.Users.push(newUser);

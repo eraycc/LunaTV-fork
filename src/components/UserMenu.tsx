@@ -4,6 +4,7 @@
 
 import {
   BarChart3,
+  Calendar,
   Check,
   ChevronDown,
   ExternalLink,
@@ -285,6 +286,11 @@ export const UserMenu: React.FC = () => {
     router.push('/tvbox');
   };
 
+  const handleReleaseCalendar = () => {
+    setIsOpen(false);
+    router.push('/release-calendar');
+  };
+
   const handleChangePassword = () => {
     setIsOpen(false);
     setIsChangePasswordOpen(true);
@@ -562,6 +568,15 @@ export const UserMenu: React.FC = () => {
               </span>
             </button>
           )}
+
+          {/* 上映日程按钮 */}
+          <button
+            onClick={handleReleaseCalendar}
+            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
+          >
+            <Calendar className='w-4 h-4 text-gray-500 dark:text-gray-400' />
+            <span className='font-medium'>上映日程</span>
+          </button>
 
           {/* TVBox配置按钮 */}
           <button

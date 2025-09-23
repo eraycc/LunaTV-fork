@@ -33,15 +33,19 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await getDetailFromApi(apiSite, id);
-    const cacheTime = await getCacheTime();
+
+    // 视频源详情默认不缓存，确保集数信息实时更新
+    // 缓存原本是为了豆瓣/Bangumi详情设计的，视频源应该实时获取
+    console.log(`获取视频详情: ${apiSite.name} - ${id}，不设置缓存确保集数实时更新`);
+
+    const responseHeaders: Record<string, string> = {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    };
 
     return NextResponse.json(result, {
-      headers: {
-        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-        'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        'Netlify-Vary': 'query',
-      },
+      headers: responseHeaders,
     });
   } catch (error) {
     return NextResponse.json(

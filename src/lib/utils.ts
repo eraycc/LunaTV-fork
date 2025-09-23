@@ -192,25 +192,36 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
           pingTime = performance.now() - pingStart;
         });
 
-      // 基于最新 hls.js 和设备性能的智能优化配置
+      // 基于最新 hls.js v1.6.13 和设备性能的智能优化配置
       const hlsConfig = {
         debug: false,
-        
+
         // Worker 配置 - 根据设备性能和浏览器能力
         enableWorker: !isMobile && !isSafari && devicePerformance !== 'low',
-        
+
         // 低延迟模式 - 仅在高性能非移动设备上启用
         lowLatencyMode: !isMobile && devicePerformance === 'high',
-        
+
+        // v1.6.13 新增：优化片段解析错误处理
+        fragLoadingRetryDelay: isMobile ? 500 : 300,
+        fragLoadingMaxRetry: 3,
+
+        // v1.6.13 新增：时间戳处理优化（针对直播回搜修复）
+        allowAugmentingTimeStamp: true,
+
         // 缓冲管理 - 基于设备性能分级
-        maxBufferLength: devicePerformance === 'low' ? 3 : 
+        maxBufferLength: devicePerformance === 'low' ? 3 :
                         devicePerformance === 'medium' ? 8 : 15,
         maxBufferSize: devicePerformance === 'low' ? 1 * 1024 * 1024 :
                       devicePerformance === 'medium' ? 5 * 1024 * 1024 : 15 * 1024 * 1024,
         backBufferLength: isTablet ? 20 : isMobile ? 10 : 30,
-        frontBufferFlushThreshold: devicePerformance === 'low' ? 15 : 
+        frontBufferFlushThreshold: devicePerformance === 'low' ? 15 :
                                   devicePerformance === 'medium' ? 30 : 60,
-        
+
+        // v1.6.13 增强：更智能的缓冲区管理
+        maxBufferHole: 0.3, // 允许较小的缓冲区空洞
+        appendErrorMaxRetry: 5, // 增加append错误重试次数以利用v1.6.13修复
+
         // 自适应比特率 - 根据设备类型和性能调整
         abrEwmaDefaultEstimate: devicePerformance === 'low' ? 1500000 :
                                devicePerformance === 'medium' ? 3000000 : 6000000,
@@ -219,11 +230,15 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
         abrMaxWithRealBitrate: true,
         maxStarvationDelay: isMobile ? 2 : 4,
         maxLoadingDelay: isMobile ? 2 : 4,
-        
+
+        // v1.6.13 新增：DRM相关优化（虽然你项目不用DRM，但有助于稳定性）
+        keyLoadRetryDelay: 1000,
+        keyLoadMaxRetry: 3,
+
         // 浏览器特殊优化
         liveDurationInfinity: !isSafari,
         progressive: false,
-        
+
         // 移动设备网络优化
         ...(isMobile && {
           manifestLoadingRetryDelay: 2000,
@@ -323,9 +338,24 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
         checkAndResolve();
       });
 
-      // 监听HLS错误
+      // 监听HLS错误 - v1.6.13增强处理
       hls.on(Hls.Events.ERROR, (event: any, data: any) => {
         console.warn('HLS测速错误:', data);
+
+        // v1.6.13 特殊处理：片段解析错误不应该导致测速失败
+        if (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
+          console.log('测速中遇到片段解析错误，v1.6.13已修复，继续测速');
+          return;
+        }
+
+        // v1.6.13 特殊处理：时间戳错误也不应该导致测速失败
+        if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR &&
+            data.err && data.err.message &&
+            data.err.message.includes('timestamp')) {
+          console.log('测速中遇到时间戳错误，v1.6.13已修复，继续测速');
+          return;
+        }
+
         if (data.fatal) {
           cleanup();
           reject(new Error(`HLS Error: ${data.type} - ${data.details}`));

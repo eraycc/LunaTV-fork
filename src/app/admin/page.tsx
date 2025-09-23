@@ -272,6 +272,10 @@ interface SiteConfig {
   DoubanImageProxy: string;
   DisableYellowFilter: boolean;
   FluidSearch: boolean;
+  // TMDB配置
+  TMDBApiKey?: string;
+  TMDBLanguage?: string;
+  EnableTMDBActorSearch?: boolean;
 }
 
 // 视频源数据类型
@@ -848,6 +852,132 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 </button>
                 <span className='ml-3 text-sm font-medium text-gray-900 dark:text-gray-100'>
                   {config.UserConfig.AllowRegister ? '开启' : '关闭'}
+                </span>
+              </div>
+            </div>
+
+            {/* 自动清理非活跃用户设置 */}
+            <div className='p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+              <div className='flex items-center justify-between mb-4'>
+                <div>
+                  <div className='font-medium text-gray-900 dark:text-gray-100'>
+                    自动清理非活跃用户
+                  </div>
+                  <div className='text-sm text-gray-600 dark:text-gray-400'>
+                    自动删除注册后从未播放过内容的用户账号
+                  </div>
+                </div>
+                <div className='flex items-center'>
+                  <button
+                    type="button"
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+                      config.UserConfig.AutoCleanupInactiveUsers ? buttonStyles.toggleOn : buttonStyles.toggleOff
+                    }`}
+                    role="switch"
+                    aria-checked={config.UserConfig.AutoCleanupInactiveUsers}
+                    onClick={async () => {
+                      await withLoading('toggleAutoCleanup', async () => {
+                        try {
+                          const response = await fetch('/api/admin/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              ...config,
+                              UserConfig: {
+                                ...config.UserConfig,
+                                AutoCleanupInactiveUsers: !config.UserConfig.AutoCleanupInactiveUsers
+                              }
+                            })
+                          });
+
+                          if (response.ok) {
+                            await refreshConfig();
+                            showAlert({
+                              type: 'success',
+                              title: '设置已更新',
+                              message: config.UserConfig.AutoCleanupInactiveUsers ? '已禁用自动清理' : '已启用自动清理',
+                              timer: 2000
+                            });
+                          } else {
+                            throw new Error('更新失败');
+                          }
+                        } catch (err) {
+                          showAlert({
+                            type: 'error',
+                            title: '更新失败',
+                            message: err instanceof Error ? err.message : '未知错误'
+                          });
+                        }
+                      });
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 rounded-full ${buttonStyles.toggleThumb} shadow transform ring-0 transition duration-200 ease-in-out ${
+                        config.UserConfig.AutoCleanupInactiveUsers ? buttonStyles.toggleThumbOn : buttonStyles.toggleThumbOff
+                      }`}
+                    />
+                  </button>
+                  <span className='ml-3 text-sm font-medium text-gray-900 dark:text-gray-100'>
+                    {config.UserConfig.AutoCleanupInactiveUsers ? '开启' : '关闭'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 天数设置 */}
+              <div className='flex items-center space-x-3'>
+                <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  保留天数：
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={config.UserConfig.InactiveUserDays || 7}
+                  onBlur={async (e) => {
+                    const days = parseInt(e.target.value) || 7;
+                    if (days === (config.UserConfig.InactiveUserDays || 7)) {
+                      return; // 没有变化，不需要保存
+                    }
+
+                    await withLoading('updateInactiveDays', async () => {
+                      try {
+                        const response = await fetch('/api/admin/config', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            ...config,
+                            UserConfig: {
+                              ...config.UserConfig,
+                              InactiveUserDays: days
+                            }
+                          })
+                        });
+
+                        if (response.ok) {
+                          await refreshConfig();
+                          showAlert({
+                            type: 'success',
+                            title: '设置已更新',
+                            message: `保留天数已设置为${days}天`,
+                            timer: 2000
+                          });
+                        } else {
+                          throw new Error('更新失败');
+                        }
+                      } catch (err) {
+                        showAlert({
+                          type: 'error',
+                          title: '更新失败',
+                          message: err instanceof Error ? err.message : '未知错误'
+                        });
+                      }
+                    });
+                  }}
+                  className='w-20 px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                />
+                <span className='text-sm text-gray-600 dark:text-gray-400'>
+                  天（注册后超过此天数且从未播放的用户将被自动删除）
                 </span>
               </div>
             </div>
@@ -3608,6 +3738,10 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     DoubanImageProxy: '',
     DisableYellowFilter: false,
     FluidSearch: true,
+    // TMDB配置默认值
+    TMDBApiKey: '',
+    TMDBLanguage: 'zh-CN',
+    EnableTMDBActorSearch: false,
   });
 
   // 豆瓣数据源相关状态
@@ -3670,6 +3804,10 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         DoubanImageProxy: config.SiteConfig.DoubanImageProxy || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
+        // TMDB配置
+        TMDBApiKey: config.SiteConfig.TMDBApiKey || '',
+        TMDBLanguage: config.SiteConfig.TMDBLanguage || 'zh-CN',
+        EnableTMDBActorSearch: config.SiteConfig.EnableTMDBActorSearch || false,
       });
     }
   }, [config]);
@@ -4122,6 +4260,83 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         </p>
       </div>
 
+      {/* TMDB配置 */}
+      <div className='border-t border-gray-200 dark:border-gray-700 pt-6'>
+        <h3 className='text-lg font-medium text-gray-900 dark:text-gray-100 mb-4'>
+          TMDB 演员搜索配置
+        </h3>
+
+        {/* TMDB API Key */}
+        <div className='mb-6'>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            TMDB API Key
+          </label>
+          <input
+            type='password'
+            value={siteSettings.TMDBApiKey || ''}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({ ...prev, TMDBApiKey: e.target.value }))
+            }
+            placeholder='请输入TMDB API Key'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            请在 <a href='https://www.themoviedb.org/settings/api' target='_blank' rel='noopener noreferrer' className='text-blue-500 hover:text-blue-600'>TMDB 官网</a> 申请免费的 API Key
+          </p>
+        </div>
+
+        {/* TMDB 语言配置 */}
+        <div className='mb-6'>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            TMDB 语言
+          </label>
+          <select
+            value={siteSettings.TMDBLanguage || 'zh-CN'}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({ ...prev, TMDBLanguage: e.target.value }))
+            }
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+          >
+            <option value='zh-CN'>中文（简体）</option>
+            <option value='zh-TW'>中文（繁体）</option>
+            <option value='en-US'>英语</option>
+            <option value='ja-JP'>日语</option>
+            <option value='ko-KR'>韩语</option>
+          </select>
+        </div>
+
+        {/* 启用TMDB演员搜索 */}
+        <div className='flex items-center justify-between'>
+          <div>
+            <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              启用 TMDB 演员搜索
+            </label>
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              启用后用户可以在搜索页面按演员名字搜索相关影视作品
+            </p>
+          </div>
+          <button
+            type='button'
+            onClick={() =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                EnableTMDBActorSearch: !prev.EnableTMDBActorSearch,
+              }))
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              siteSettings.EnableTMDBActorSearch
+                ? 'bg-green-600'
+                : 'bg-gray-200 dark:bg-gray-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                siteSettings.EnableTMDBActorSearch ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* 操作按钮 */}
       <div className='flex justify-end'>
