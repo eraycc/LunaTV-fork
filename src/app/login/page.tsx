@@ -33,11 +33,8 @@ function VersionDisplay() {
   }, []);
 
   return (
-    <button
-      onClick={() =>
-        window.open('https://github.com/SzeMeng76/LunaTV', '_blank')
-      }
-      className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
+    <div
+      className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400'
     >
       <span className='font-mono'>v{CURRENT_VERSION}</span>
       {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
@@ -63,7 +60,7 @@ function VersionDisplay() {
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -104,6 +101,18 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
+        // 记录登入时间
+        try {
+          await fetch('/api/user/my-stats', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ loginTime: Date.now() })
+          });
+        } catch (error) {
+          console.log('记录登入时间失败:', error);
+          // 登入时间记录失败不影响正常登录流程
+        }
+
         const redirect = searchParams.get('redirect') || '/';
         router.replace(redirect);
       } else if (res.status === 401) {
