@@ -49,6 +49,7 @@ export interface VideoCardProps {
   origin?: 'vod' | 'live';
   remarks?: string; // 备注信息（如"已完结"、"更新至20集"等）
   releaseDate?: string; // 上映日期 (YYYY-MM-DD)，用于即将上映内容
+  priority?: boolean; // 图片加载优先级（用于首屏可见图片）
 }
 
 export type VideoCardHandle = {
@@ -80,6 +81,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     origin = 'vod',
     remarks,
     releaseDate,
+    priority = false,
   }: VideoCardProps,
   ref
 ) {
@@ -119,28 +121,40 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     setDoubanId: (id?: number) => setDynamicDoubanId(id),
   }));
 
+  // 使用 useMemo 缓存计算值，避免每次渲染重新计算
   const actualTitle = title;
   const actualPoster = poster;
-  const actualSource = source;
-  const actualId = id;
+  // 为豆瓣内容生成收藏用的source和id（仅用于收藏，不用于播放）
+  const actualSource = source || (from === 'douban' && douban_id ? 'douban' : '');
+  const actualId = id || (from === 'douban' && douban_id ? douban_id.toString() : '');
   const actualDoubanId = dynamicDoubanId;
   const actualEpisodes = dynamicEpisodes;
   const actualYear = year;
   const actualQuery = query || '';
-  const actualSearchType = isAggregate
-    ? (actualEpisodes && actualEpisodes === 1 ? 'movie' : 'tv')
-    : type;
+
+  const actualSearchType = useMemo(() =>
+    isAggregate
+      ? (actualEpisodes && actualEpisodes === 1 ? 'movie' : 'tv')
+      : type,
+    [isAggregate, actualEpisodes, type]
+  );
 
   // 判断是否为即将上映（未发布的内容）- 只有真正未上映的才算
-  const isUpcoming = remarks && remarks.includes('天后上映');
+  const isUpcoming = useMemo(() =>
+    remarks && remarks.includes('天后上映'),
+    [remarks]
+  );
 
   // 判断是否有上映相关标记（包括已上映、今日上映、即将上映）
-  const hasReleaseTag = remarks && (remarks.includes('天后上映') || remarks.includes('已上映') || remarks.includes('今日上映'));
+  const hasReleaseTag = useMemo(() =>
+    remarks && (remarks.includes('天后上映') || remarks.includes('已上映') || remarks.includes('今日上映')),
+    [remarks]
+  );
 
-  // 获取收藏状态（搜索结果页面不检查，但即将上映需要检查）
+  // 获取收藏状态（搜索结果页面不检查）
   useEffect(() => {
-    // 即将上映的内容需要检查收藏状态
-    const shouldCheckFavorite = isUpcoming || (from !== 'douban' && from !== 'search');
+    // 豆瓣内容和非搜索页面需要检查收藏状态
+    const shouldCheckFavorite = from !== 'search';
 
     if (!shouldCheckFavorite || !actualSource || !actualId) return;
 
@@ -174,8 +188,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       e.preventDefault();
       e.stopPropagation();
 
-      // 即将上映的内容允许收藏
-      if ((from === 'douban' && !isUpcoming) || !actualSource || !actualId) return;
+      // 所有豆瓣内容都允许收藏
+      if (!actualSource || !actualId) return;
 
       try {
         // 确定当前收藏状态
@@ -199,6 +213,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             total_episodes: actualEpisodes ?? 1,
             save_time: Date.now(),
             search_title: actualQuery || actualTitle, // 保存搜索标题用于后续查找资源
+            type: type || undefined, // 保存内容类型（movie/tv/variety等），空字符串转为undefined
             releaseDate: releaseDate, // 保存上映日期
             remarks: remarks, // 保存备注信息
           });
@@ -256,8 +271,12 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       // 直播内容跳转到直播页面
       const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
       router.push(url);
-    } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release') {
-      // 豆瓣内容 或 聚合搜索 或 即将上映（已上映）内容 - 只用标题和年份搜索
+    } else if (actualSource === 'shortdrama' && actualId) {
+      // 短剧内容 - 使用shortdrama_id参数
+      const url = `/play?title=${encodeURIComponent(actualTitle.trim())}&shortdrama_id=${actualId}`;
+      router.push(url);
+    } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release' || actualSource === 'douban' || actualSource === 'bangumi') {
+      // 豆瓣内容 或 聚合搜索 或 即将上映 或 Bangumi番剧 - 只用标题和年份搜索
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''
         }${doubanIdParam}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
       router.push(url);
@@ -293,8 +312,12 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       // 直播内容跳转到直播页面
       const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
       window.open(url, '_blank');
-    } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release') {
-      // 豆瓣内容 或 聚合搜索 或 即将上映（已上映）内容 - 只用标题和年份搜索
+    } else if (actualSource === 'shortdrama' && actualId) {
+      // 短剧内容 - 使用shortdrama_id参数
+      const url = `/play?title=${encodeURIComponent(actualTitle.trim())}&shortdrama_id=${actualId}`;
+      window.open(url, '_blank');
+    } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release' || actualSource === 'douban' || actualSource === 'bangumi') {
+      // 豆瓣内容 或 聚合搜索 或 即将上映 或 Bangumi番剧 - 只用标题和年份搜索
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''}${doubanIdParam}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
       window.open(url, '_blank');
     } else if (actualSource && actualId) {
@@ -350,9 +373,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     longPressDelay: 500,
   });
 
-  // 根据评分获取徽章样式
-  const getRatingBadgeStyle = useCallback((rateStr: string) => {
-    const rateNum = parseFloat(rateStr);
+  // 根据评分获取徽章样式 - 使用 useMemo 缓存结果
+  const ratingBadgeStyle = useMemo(() => {
+    if (!rate) return null;
+
+    const rateNum = parseFloat(rate);
 
     if (rateNum >= 8.5) {
       // 高分：金色 + 发光
@@ -391,7 +416,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         glowClass: 'group-hover:shadow-gray-500/50',
       };
     }
-  }, []);
+  }, [rate]);
 
   const config = useMemo(() => {
     const configs = {
@@ -429,7 +454,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         showSourceName: false,
         showProgress: false,
         showPlayButton: true,
-        showHeart: isUpcoming, // 即将上映的内容显示收藏按钮
+        showHeart: true, // 所有豆瓣内容都显示收藏按钮
         showCheckCircle: false,
         showDoubanLink: true,
         showRating: !!rate,
@@ -477,8 +502,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
     // 聚合源信息 - 直接在菜单中展示，不需要单独的操作项
 
-    // 收藏/取消收藏操作（即将上映的内容也显示收藏选项）
-    if (config.showHeart && (isUpcoming || from !== 'douban') && actualSource && actualId) {
+    // 收藏/取消收藏操作
+    if (config.showHeart && actualSource && actualId) {
       const currentFavorited = from === 'search' ? searchFavorited : favorited;
 
       if (from === 'search') {
@@ -656,24 +681,33 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             alt={actualTitle}
             fill
             sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, (max-width: 1024px) 20vw, 16vw"
-            className={`${origin === 'live' ? 'object-contain' : 'object-cover'} transition-all duration-700 ease-out ${
+            className={`${origin === 'live' ? 'object-contain' : 'object-cover'} transition-all duration-500 ease-out ${
               imageLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-105'
             }`}
             referrerPolicy='no-referrer'
-            loading='lazy'
-            quality={85}
+            loading={priority ? undefined : 'lazy'}
+            priority={priority}
+            quality={75}
             onLoadingComplete={() => {
               setIsLoading(true);
               setImageLoaded(true);
             }}
             onError={(e) => {
-              // 图片加载失败时的重试机制
+              // 图片加载失败时的处理
               const img = e.target as HTMLImageElement;
-              if (!img.dataset.retried) {
+              if (origin === 'live') {
+                // 直播频道使用默认图标，不重试避免闪烁
+                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300"%3E%3Crect fill="%23374151" width="200" height="300"/%3E%3Cg fill="%239CA3AF"%3E%3Ccircle cx="100" cy="120" r="30"/%3E%3Cpath d="M60 160 Q60 140 80 140 L120 140 Q140 140 140 160 L140 200 Q140 220 120 220 L80 220 Q60 220 60 200 Z"/%3E%3C/g%3E%3Ctext x="100" y="260" font-family="Arial" font-size="14" fill="%239CA3AF" text-anchor="middle"%3E直播频道%3C/text%3E%3C/svg%3E';
+                setImageLoaded(true);
+              } else if (!img.dataset.retried) {
+                // 非直播内容重试一次
                 img.dataset.retried = 'true';
                 setTimeout(() => {
                   img.src = processImageUrl(actualPoster);
                 }, 2000);
+              } else {
+                // 重试失败，使用通用占位图
+                setImageLoaded(true);
               }
             }}
             style={{
@@ -973,11 +1007,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           })()}
 
           {/* 评分徽章 - 动态颜色 */}
-          {config.showRating && rate && (() => {
-            const badgeStyle = getRatingBadgeStyle(rate);
-            return (
+          {config.showRating && rate && ratingBadgeStyle && (
               <div
-                className={`absolute top-2 right-2 ${badgeStyle.bgColor} ${badgeStyle.ringColor} ${badgeStyle.shadowColor} ${badgeStyle.textColor} ${badgeStyle.glowClass} text-xs font-bold rounded-full flex flex-col items-center justify-center transition-all duration-300 ease-out group-hover:scale-110 backdrop-blur-sm w-9 h-9 sm:w-10 sm:h-10`}
+                className={`absolute top-2 right-2 ${ratingBadgeStyle.bgColor} ${ratingBadgeStyle.ringColor} ${ratingBadgeStyle.shadowColor} ${ratingBadgeStyle.textColor} ${ratingBadgeStyle.glowClass} text-xs font-bold rounded-full flex flex-col items-center justify-center transition-all duration-300 ease-out group-hover:scale-110 backdrop-blur-sm w-9 h-9 sm:w-10 sm:h-10`}
                 style={{
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
@@ -991,8 +1023,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                 <Star size={10} className="fill-current mb-0.5" />
                 <span className="text-[10px] sm:text-xs font-extrabold leading-none">{rate}</span>
               </div>
-            );
-          })()}
+          )}
 
           {/* 豆瓣链接 */}
           {config.showDoubanLink && actualDoubanId && actualDoubanId !== 0 && (
