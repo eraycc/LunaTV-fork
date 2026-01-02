@@ -17,15 +17,15 @@
 
 <div align="center">
 
-![Next.js](https://img.shields.io/badge/Next.js-14.2.23-000?logo=nextdotjs)
-![React](https://img.shields.io/badge/React-18.2.0-61dafb?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-4.9.5-3178c6?logo=typescript)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38bdf8?logo=tailwindcss)
+![Next.js](https://img.shields.io/badge/Next.js-16.1.0-000?logo=nextdotjs)
+![React](https://img.shields.io/badge/React-19.0.0-61dafb?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178c6?logo=typescript)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.1.18-38bdf8?logo=tailwindcss)
 ![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.3.0-ff6b6b)
 ![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-5.7.0-orange)
+![Version](https://img.shields.io/badge/Version-5.9.1-orange)
 
 </div>
 
@@ -33,39 +33,64 @@
 
 ## 📢 项目说明
 
-本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v5.7.0**，累计新增 50+ 重大功能模块，300+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
+本项目是在 **MoonTV** 基础上进行的深度二次开发版本，从 **v4.3.1** 版本开始，持续迭代至当前 **v5.9.1**，累计新增 60+ 重大功能模块，400+ 细节优化。所有新增功能详见 [CHANGELOG](CHANGELOG)。
 
 ### 💡 核心增强亮点
 
 #### 🎥 内容生态扩展
 - **YouTube 集成**：完整的 YouTube 搜索、播放、直播功能，支持无 Cookie 域名减少验证
 - **网盘搜索 (PanSou)**：集成高级筛选和缓存管理的网盘资源搜索
-- **短剧完整功能**：短剧搜索、播放、详情展示，专用移动端 API 代理
+- **ACG种子搜索**：集成ACG动漫种子资源搜索功能，提供丰富的动漫资源获取渠道
+- **短剧完整功能**：短剧搜索、播放、详情展示，专用移动端 API 代理，备用API集数不可用时自动跳到下一集
 - **IPTV 直播**：m3u/m3u8 订阅、EPG 节目单（支持多源和 url-tvg）、直播源聚合、台标代理、频道当前源内搜索、直播源标签页快速搜索
 - **Bangumi 动漫**：动漫信息智能检测、API 集成、缓存机制
 
 #### 🤖 智能推荐系统
-- **AI 内容推荐**：支持 GPT-5/o 系列模型，动态提示词管理
+- **AI 智能助手**：全局AI推荐按钮（ModernNav导航栏），支持 GPT-5/o 系列模型，动态提示词管理，85-90% 输入延迟优化，流式传输、编排器、视频上下文支持，集成豆瓣和TMDB数据，支持ID缺失时自动TMDB搜索
+- **Tavily搜索模式**：支持无需AI API的Tavily搜索模式，提供灵活的API验证，SSE流式传输，友好的用户指导
 - **多卡片类型**：影视推荐、YouTube 视频、视频链接解析
 - **TMDB 演员搜索**：完整的演员搜索、过滤和缓存
-- **发布日历与即将上映**：即将上线内容预览和跟踪，支持收藏即将上映内容，上映后自动可播放
+- **交互式演员作品查看器**：播放页面内联显示演员作品，2小时缓存，TMDB备用数据源
+- **发布日历与即将上映**：即将上线内容预览和跟踪，支持收藏即将上映内容，上映后自动可播放，2026年发布数据爬虫
 
 #### 💬 弹幕生态系统
 - **第三方弹幕 API**：集成腾讯视频、爱奇艺、优酷、B站等主流平台，智能内容匹配防预告
 - **智能性能优化**：基于设备性能的分级渲染、Web Worker 加速、硬件加速
-- **完整配置系统**：字号、速度、透明度、显示区域、防重叠等全方位调节
+- **综合设置面板**：集成到全局设置的完整弹幕配置面板，支持字号、速度、透明度、显示区域、防重叠等全方位调节
 - **智能缓存机制**：localStorage 持久化，30 分钟缓存，自动清理过期数据
 - **Web端专用输入**：简洁"弹字"按钮，一键快速发送弹幕（移动端自动隐藏）
 
 #### 📊 用户管理增强
+- **多Provider OIDC认证**：支持同时配置多个OAuth提供商（Google、Microsoft、GitHub、Facebook、微信、Apple、LinuxDo），用户可选择喜欢的方式登录
+  - **GitHub OAuth**：自动适配非标准OIDC实现，支持私有邮箱获取，专用API headers
+  - **Apple Sign In**：完整支持form_post响应模式，id_token解析，JWKS签名验证
+  - **Facebook OAuth**：Graph API v24.0集成，支持头像和用户信息获取
+  - **微信登录**：网站应用扫码登录，支持openid和用户信息获取
+  - **向后兼容**：支持旧版单Provider配置自动迁移
+- **V2用户存储系统**：SHA256加密，改进的用户管理和OIDC集成
 - **Telegram Magic Link 认证**：基于 Telegram 的安全便捷登录方式，自动配置 webhook
 - **用户等级系统**：取代大数字登录次数，提供友好的等级显示
-- **播放统计系统**：完整的观看数据统计、分析、可视化，支持全局统计和个人统计选项卡切换
+- **播放统计系统**：完整的观看数据统计、分析、可视化，支持全局统计和个人统计选项卡切换，收藏API性能监控
 - **双重提醒系统**：新剧集（红色主题）和继续观看（蓝色主题）独立分类，渐变徽章和光环效果
+- **全局收藏功能**：支持跨设备同步的收藏系统，数据存储到数据库，支持分类筛选（电影、剧集、综艺、短剧、番剧）
 - **用户组权限**：精细化权限控制，支持 AI 助手、YouTube 等功能权限
 - **非活跃用户清理**：智能自动清理机制，详细配置和日志
 
 #### 🎮 播放器功能强化
+- **Liquid-glass 毛玻璃控制栏**：现代化的毛玻璃效果控制栏，12px 模糊背景，响应式按钮自适应，完美解决移动端按钮溢出问题
+- **多人观影房功能**：外部服务器集成的实时同步观影体验
+  - **全局按钮**：观影房按钮集成到全局布局，位于返回顶部按钮上方
+  - **房间管理**：创建/加入/离开/解散房间，支持房主权限控制
+  - **播放同步**：自动同步播放、暂停、进度跳转、剧集切换
+  - **用户状态**：显示房间成员、连接状态指示器
+  - **视频卡片**：显示当前播放内容的海报和信息
+  - **智能跟随**：房主切换剧集时，成员自动跟随（无需确认）
+  - **源切换确认**：切换视频源时弹出确认对话框，防止误操作导致观影中断
+- **M3U8下载功能**：客户端M3U8视频下载支持，批量剧集下载
+- **播放器缓冲优化**：三种缓冲模式（省流、均衡、高质），智能适配网络环境
+- **Netflix风格智能速度测试**：实时网络速度测试，智能提前停止机制，自动推荐最优缓冲模式
+- **Anime4K超分辨率**：WebGPU加速的实时视频超分辨率，提升画质
+- **自定义广告过滤**：支持自定义广告过滤规则代码，独立重置和恢复默认按钮
 - **Chromecast 投屏**：智能浏览器检测，自动排除OPPO、小米、华为、三星等厂商浏览器
 - **iPad/iOS 优化**：HLS.js 官方源码优化，智能设备检测，多重自动播放策略
 - **跳过片头片尾**：实时标记按钮、可拖拽悬浮窗配置、剩余时间模式、位置持久化存储
@@ -74,14 +99,19 @@
 - **选集分组滚动翻页**：播放页选集支持滚动翻页，大量集数流畅浏览
 
 #### 📱 界面体验优化
+- **Netflix风格HeroBanner**：首页带预告片自动播放和背景图的Netflix风格横幅，支持backdrop占位符，豆瓣预告片URL过期自动刷新（localStorage持久化 + 403错误自动重试），完美解决预告片缓存过期问题
+- **Material UI Tabs CategoryBar**：直播和播放页面全新工业风分类选择器，使用Material UI Tabs实现可靠滚动和响应式设计，替代之前的手动滚动实现
+- **Netflix风格徽章系统**：统一所有徽章（剧集徽章、通知徽章、源指示器）为Netflix风格设计，玻璃态效果控制按钮
 - **英雄横幅全品类支持**：首页自动轮播英雄横幅支持所有内容类型（电影、剧集、综艺、短剧、番剧），渐变背景设计
 - **现代化导航UI**：桌面端水平顶部导航栏，移动端Liquid Glass底部导航，响应式切换
 - **移动端横幅优化**：滑动卡片式布局，支持触摸手势导航，更适合移动设备
 - **虚拟滚动**：react-window 2.2.0，支持大量内容流畅加载，智能容器尺寸检测（ResizeObserver）
 - **虚拟滚动美化开关**：渐变样式、图标、动画效果，用户可自由切换显示模式
 - **响应式网格**：2-8 列自适应，自动计算最优布局
-- **豆瓣详情增强**：评分、演职人员、首播日期、时长、制作信息完整展示，海报代理防403错误
+- **豆瓣详情增强**：评分、演职人员、首播日期、时长、制作信息完整展示，海报代理防403错误，24小时缓存优化
+- **豆瓣评论集成**：播放页面展示豆瓣用户评论，提供更丰富的影片讨论和观影体验
 - **演员头像与推荐影片**：播放页展示演员头像（支持 celebrity 和 personage URL）、类似影片推荐，智能图片代理（自动迁移 direct 到 server 模式）
+- **完结系列集数统计**：搜索和分类页面显示完结系列的总集数，方便用户了解内容规模
 - **用户菜单增强**：更新提醒、继续观看（含新剧集徽章）、我的收藏快捷入口、TVBox设置集成
 - **登录界面现代化**：动态随机壁纸、渐变卡片、响应式设计
 - **返回顶部按钮**：发布日历等长页面快捷返回
@@ -92,7 +122,9 @@
 - **TVBox 智能搜索代理**：成人内容过滤、路径前缀支持、UI 控制开关
 - **成人内容管理**：双层过滤系统、自动检测、批量操作、用户/组级别控制
 - **视频源导入导出**：支持数组和配置文件格式导出，便于备份和迁移
+- **备用 API 支持**：搜索和首页数据加载支持备用 API，当主 API 失败时自动切换，提高系统稳定性和可用性
 - **日历缓存迁移**：从 localStorage 迁移至数据库，支持跨设备同步
+- **收藏数据库存储**：全局收藏数据存储到数据库，支持跨设备同步和分类管理
 - **缓存优化**：统一缓存管理（YouTube、网盘、豆瓣、弹幕）
 - **存储模式增强**：Kvrocks/Redis/Upstash 完整支持，内存缓存防 QuotaExceededError
 
@@ -125,18 +157,19 @@
 ## ✨ 完整功能列表
 
 ### 🎬 内容聚合
-- ✅ 多源影视聚合搜索（流式输出、智能变体、语言感知过滤）
+- ✅ 多源影视聚合搜索（流式输出、智能变体、语言感知过滤、备用 API 支持）
 - ✅ YouTube 集成（搜索、直播、iframe 播放、时间筛选和排序）
 - ✅ 网盘搜索（PanSou 集成、高级筛选、缓存管理）
 - ✅ 短剧完整功能（搜索、播放、专用详情页、移动端API代理）
 - ✅ IPTV 直播（m3u 订阅、EPG 节目单、多源支持、url-tvg、源聚合、频道搜索）
 - ✅ Bangumi 动漫（信息检测、API 集成、3-6位ID支持）
 - ✅ TMDB 演员搜索（过滤、缓存）
+- ✅ 完结系列集数统计（搜索和分类页面显示总集数）
 
 ### 🤖 智能推荐
 - ✅ AI 推荐系统（GPT-5/o 支持、动态提示词）
 - ✅ 发布日历（即将上线内容预览）
-- ✅ 豆瓣详情增强（完整演职人员信息）
+- ✅ 豆瓣详情增强（完整演职人员信息、用户评论展示）
 - ✅ 智能搜索优化（语言感知、模糊匹配）
 
 ### 💬 弹幕系统
@@ -153,15 +186,17 @@
 - ✅ 用户等级系统（取代大数字登录次数）
 - ✅ 播放统计（观看时长、影片数量、最近记录、全局/个人选项卡切换）
 - ✅ 双重提醒系统（新剧集红色主题、继续观看蓝色主题、渐变徽章）
+- ✅ 全局收藏功能（跨设备同步、数据库存储、分类筛选：电影/剧集/综艺/短剧/番剧）
 - ✅ VideoCard观看更新显示（替代弹窗式更新）
 - ✅ 用户组权限（AI、YouTube 等功能控制）
 - ✅ 非活跃用户自动清理（智能配置、日志记录）
 - ✅ 登录时间追踪（增强管理员分析能力）
 
 ### 🎮 播放器增强
+- ✅ Liquid-glass 毛玻璃控制栏（12px 模糊、响应式按钮、移动端完美适配）
 - ✅ Chromecast 投屏
 - ✅ iPad/iOS 优化（HLS.js 配置、自动播放）
-- ✅ 弹幕面板（移动端精确定位）
+- ✅ 弹幕面板（移动端精确定位、优化显示和交互）
 - ✅ 音量控制优化
 - ✅ 跳过片头片尾
 - ✅ 直播DVR检测（播放器加载后自动检测DVR/时移支持，显示可seek时间范围，一键启用进度条模式）
@@ -176,6 +211,8 @@
 - ✅ 虚拟滚动美化开关（渐变样式、图标、动画、用户可切换）
 - ✅ 响应式网格（2-8 列自适应、实际容器宽度动态计算）
 - ✅ 豆瓣详情增强（评分、演职人员、首播日期、时长、制作信息、海报代理防403）
+- ✅ 豆瓣评论集成（播放页展示用户评论、丰富观影体验）
+- ✅ 完结系列集数统计（搜索和分类页显示总集数、内容规模一目了然）
 - ✅ 用户菜单增强（更新提醒、继续观看含新剧集徽章、收藏快捷入口、TVBox设置）
 - ✅ 登录注册现代化（动态随机壁纸、渐变卡片、响应式设计）
 - ✅ 返回顶部按钮（发布日历等长页面）
@@ -189,9 +226,11 @@
 - ✅ TVBox 智能搜索代理（成人内容过滤、路径前缀支持、UI控制）
 - ✅ 成人内容管理系统（双层过滤、自动检测、批量操作、用户/组级别控制）
 - ✅ 视频源导入导出（数组/配置文件格式、备份迁移、快速复制按钮）
+- ✅ 备用 API 支持（主 API 失败自动切换、提高系统稳定性）
 - ✅ 源浏览器和测试模块（源站测试、健康检查、移动端响应式）
 - ✅ 资源搜索 API 权限验证（增强安全性）
 - ✅ 日历缓存数据库迁移
+- ✅ 收藏数据库存储（跨设备同步、分类管理）
 - ✅ 统一缓存管理系统
 - ✅ Kvrocks/Redis/Upstash 存储
 - ✅ 内存缓存防 QuotaExceededError
@@ -231,16 +270,16 @@
 
 | 分类      | 主要依赖                                                                                              |
 | --------- | ----------------------------------------------------------------------------------------------------- |
-| 前端框架  | [Next.js 14.2.23](https://nextjs.org/) · App Router                                                        |
-| UI & 样式 | [Tailwind CSS 3.4.17](https://tailwindcss.com/) · [Framer Motion 12](https://www.framer.com/motion/)                                                       |
-| 语言      | TypeScript 4.9.5                                                                                          |
+| 前端框架  | [Next.js 16.1.0](https://nextjs.org/) · App Router                                                        |
+| UI & 样式 | [Tailwind CSS 4.1.18](https://tailwindcss.com/) · [Framer Motion 12.18.1](https://www.framer.com/motion/)                                                       |
+| 语言      | TypeScript 5.8.3                                                                                          |
 | 播放器    | [ArtPlayer 5.3.0](https://github.com/zhw2590582/ArtPlayer) · [HLS.js 1.6.15](https://github.com/video-dev/hls.js/)  · [artplayer-plugin-danmuku 5.2.0](https://github.com/zhw2590582/ArtPlayer) |
-| 状态管理  | React Context API · React Hooks                                                                              |
+| 状态管理  | React 19.0.0 Context API · React Hooks                                                                              |
 | 数据存储  | Kvrocks · Redis · Upstash · localStorage                                                                              |
-| 虚拟化  | [react-window 2.2.0](https://github.com/bvaughn/react-window) · ResizeObserver                                                                              |
-| UI 组件  | [@headlessui/react 2](https://headlessui.com/) · [Lucide Icons](https://lucide.dev/) · [React Icons 5](https://react-icons.github.io/react-icons/)                                                                              |
-| 代码质量  | ESLint · Prettier · Jest · Husky                                                                              |
-| 部署      | Docker · Docker Compose                                                                    |
+| 虚拟化  | [react-window 2.2.3](https://github.com/bvaughn/react-window) · ResizeObserver                                                                              |
+| UI 组件  | [@headlessui/react 2.2.4](https://headlessui.com/) · [Lucide Icons 0.438.0](https://lucide.dev/) · [React Icons 5.4.0](https://react-icons.github.io/react-icons/)                                                                              |
+| 代码质量  | ESLint 9.28.0 · Prettier 3.5.3 · Jest 29.7.0 · Husky 7.0.4                                                                              |
+| 部署      | Docker · Docker Compose · pnpm 10.14.0                                                                    |
 
 ---
 
@@ -873,36 +912,74 @@ services:
 
 完整的功能更新和 Bug 修复记录请查看 [CHANGELOG](CHANGELOG)。
 
-### 最新版本：v5.7.0 (2025-12-06)
+### 最新版本：v5.9.1 (2025-12-31)
 
 #### 新增功能
-- 🎭 演员头像和推荐影片功能：在播放页面展示演员头像和类似影片推荐
-- 🔍 直播源标签页搜索功能：为直播源标签页添加搜索功能，快速查找直播频道
+- 🎨 玻璃态设计应用到控制按钮
+- 🚀 CMS代理和成人内容过滤增强
+- ⚡ 图片代理超时和CORS支持优化
+- 🔍 ACG种子搜索集成
+- 🛠️ cn()工具函数用于Tailwind类合并
+- 🔐 多Provider OIDC编辑器回调URL复制按钮
+- 🎯 豆瓣代理API（带unstable_cache）和useDoubanInfo hook
+- 📊 豆瓣24小时缓存和增强头像提取
+- 🎨 CategoryBar Material UI Tabs（直播和播放页面工业风设计）
+- 🎬 Netflix风格徽章系统（统一剧集徽章、通知徽章、源指示器）
+- 📅 即将上线标签页
+- 🤖 AI功能全面增强（流式传输、编排器、视频上下文、豆瓣/TMDB集成）
+- 🔔 自定义确认对话框
+- 🤖 Tavily仅模式支持（无需AI API的搜索模式）
+- 🎬 Netflix风格HeroBanner（带预告片和背景图）
+- 🎥 视频代理和图片URL重定向修复
+- 🔍 调试模式控制台切换
+- 👥 观影房源切换确认对话框
+- ⚡ Netflix风格智能速度测试
+- 📊 Tavily API使用追踪
+- 🔍 2026年发布数据爬虫
 
-#### 优化改进
-- 🖼️ 默认图片代理模式改为 server：在所有组件中将默认图片代理从 direct 改为 server 模式
-- 📅 演员信息显示优化：为演员姓名和角色添加 tooltip，防止文本截断
-- 📦 升级依赖：升级 hls.js 到 v1.6.15
+#### 性能优化
+- 📱 播放页UI增强（移动端优先设计）
+- 🎨 LinuxDo OIDC Logo更新
+- ⚡ Tailwind v4规范类语法升级
+- 🔄 替换手动滚动为原生scrollIntoView API
+- ⚡ 搜索性能优化（季度搜索数字变体生成优化）
+- 🔄 用自定义ConfirmDialog替代原生confirm
+- ⚡ 首页所有ScrollableRow启用虚拟化
+- ⚙️ HeroBanner优化（标准化4小时缓存、性能重构、提取自定义hooks）
+- 🔄 提升AI权限检查到页面级别
+- 🚀 升级所有爬虫和代理到2025最佳实践
 
 #### Bug 修复
-- 🖼️ 修复演员头像显示问题：
-  - 支持 `/celebrity/` 和 `/personage/` URL 格式
-  - 过滤默认占位符头像
-  - 实现图片代理自动修复（从 direct 迁移到 server 模式）
-  - 自动迁移旧版 localStorage 配置
-- 📱 修复推荐卡片移动端导航问题：
-  - 使用捕获阶段事件监听拦截 VideoCard 内部事件
-  - 添加长按检测（500ms）以保留操作菜单功能
-  - 修复移动端点击跳转到页面顶部的问题
-  - 保留所有 VideoCard hover 效果和 UI 显示
-- 🎯 修复推荐卡片事件冲突：
-  - 使用 `addEventListener` 的捕获模式优先拦截事件
-  - 添加 `stopImmediatePropagation` 防止事件干扰
-  - 短按跳转，长按显示菜单，完美兼容移动端和桌面端
-- 🔧 修复日期计算不一致性：修复首页和发布日历之间的日期计算差异
+- 🐛 修复观影房配置保存前过早获取统计信息
+- 🐛 修复OIDC用户登录时间记录
+- 🐛 修复旧版移动浏览器backdrop-filter兼容性（36个文件自动修复）
+- 🐛 修复缺失或无效海报图片显示
+- 🐛 修复模态框内容截断问题
+- 🐛 改进移动端响应式（认证页面、观影房、OIDC配置）
+- 🐛 修复搜索结果人工限制丢弃有效匹配
+- 🐛 修复直播CategoryBar滚动问题
+- 🐛 修复返回顶部按钮（播放页面ACG、网盘模态框）
+- 🐛 简化非活跃用户清理逻辑
+- 🐛 修复Docker相关问题（短剧API、HTTPS支持、配置缓存）
+- 🐛 统一首页和UserMenu发布日期计算
+- 🐛 为普通用户统计VideoCard光环效果添加悬停缩放动画
+- 🤖 AI功能修复（推荐提取、YouTube解析、流式模式、Markdown渲染等）
+- 🤖 Tavily搜索模式优化（SSE流式传输、移除默认值回退）
+- 🤖 AI流式传输优化（立即显示聊天消息、Markdown格式欢迎消息）
+- 🤖 AI助手动态适配站点名称
+- 🎨 修复粘性筛选栏问题
+- 🎬 修复切换视频源时保留剧集编号
+- 🎬 修复HeroBanner问题（首次加载视频自动播放、调整横幅高度等）
+- 👥 修复观影房源切换问题
+- 📱 修复旧版iOS Safari认证页面崩溃
+- 🎬 修复豆瓣预告片缓存问题（URL过期、CDN缓存优化）
 
 ### 重大里程碑版本
 
+- **v5.9.1**：玻璃态设计、Material UI CategoryBar、Netflix风格HeroBanner、AI功能全面增强、豆瓣缓存优化
+- **v5.9.0**：多Provider OIDC（GitHub/Apple/Facebook/微信）、多人观影房、M3U8下载、Anime4K超分辨率、播放器缓冲优化
+- **v5.8.0**：Next.js 16.1 + React 19 + Tailwind CSS 4.1、AI聊天性能优化、演员作品查看器、弹幕设置面板
+- **v5.7.1**：Liquid-glass 毛玻璃控制栏、豆瓣评论、全局收藏、备用 API、完结系列集数统计
 - **v5.7.0**：演员头像和推荐影片、直播源搜索、图片代理优化、移动端导航修复
 - **v5.6.3**：短剧多源搜索、智能源过滤、即将上映智能分布、全面z-index冲突修复
 - **v5.6.2**：即将上映日历、英雄横幅全品类支持、直播DVR检测、移动端横幅优化
@@ -978,6 +1055,13 @@ services:
 - [Bangumi](https://bangumi.tv/) — 动漫信息
 - [Zwei](https://github.com/bestzwei) — 豆瓣 CORS 代理
 - [CMLiussss](https://github.com/cmliu) — 豆瓣 CDN 服务
+
+### 设计与实现参考
+本项目在开发过程中参考了以下优秀开源项目的设计思路和实现方案：
+- **[MoonTVPlus](https://github.com/mtvpls/MoonTVPlus)** — 观影室同步播放、移动端优化等功能实现参考
+- **[DecoTV](https://github.com/Decohererk/DecoTV)** — TVBox 安全策略、性能优化、UI 设计等实现参考
+
+感谢这些项目及其作者的开源贡献和优秀实现！
 
 ### 特别感谢
 - 所有提供免费影视接口的站点

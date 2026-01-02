@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
@@ -89,8 +90,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 更新缓存中的站点设置
+    // 更新缓存中的站点设置，保留现有的自定义去广告配置
     adminConfig.SiteConfig = {
+      ...adminConfig.SiteConfig, // 保留所有现有字段
       SiteName,
       Announcement,
       SearchDownstreamMaxPage,
@@ -109,15 +111,22 @@ export async function POST(request: NextRequest) {
 
     // 写入数据库
     await db.saveAdminConfig(adminConfig);
-    
+
     // 清除配置缓存，强制下次重新从数据库读取
     clearConfigCache();
 
+    // 🔥 刷新所有页面的缓存，使新配置立即生效（无需重启Docker）
+    revalidatePath('/', 'layout');
+
+    // 🔥 添加强制no-cache headers，防止Docker环境下Next.js Router Cache问题
+    // 参考：https://github.com/vercel/next.js/issues/62071
     return NextResponse.json(
-      { ok: true },
+      { ok: true, shouldReload: true }, // 添加shouldReload标志通知前端刷新页面
       {
         headers: {
-          'Cache-Control': 'no-store', // 不缓存结果
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         },
       }
     );

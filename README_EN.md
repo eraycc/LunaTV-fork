@@ -13,19 +13,19 @@
   <img src="public/logo.png" alt="LunaTV Logo" width="120">
 </div>
 
-> 🎬 **LunaTV Enhanced Edition** is a comprehensive video streaming platform deeply customized from MoonTV. Built on top of the original version, it adds **50+ major feature enhancements** including **YouTube Integration**, **Cloud Drive Search**, **AI Recommendations**, **Short Drama**, **IPTV Live TV**, **Bangumi Anime**, **Playback Statistics**, **Danmaku System**, and more, delivering the ultimate online streaming experience.
+> 🎬 **LunaTV Enhanced Edition** is a comprehensive video streaming platform deeply customized from MoonTV. Built on top of the original version, it adds **60+ major feature enhancements** including **Multi-Provider OIDC**, **Watch Room**, **YouTube Integration**, **Cloud Drive Search**, **AI Recommendations**, **Short Drama**, **IPTV Live TV**, **Bangumi Anime**, **Playback Statistics**, **Danmaku System**, and more, delivering the ultimate online streaming experience.
 
 <div align="center">
 
-![Next.js](https://img.shields.io/badge/Next.js-14.2.23-000?logo=nextdotjs)
-![React](https://img.shields.io/badge/React-18.2.0-61dafb?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-4.9.5-3178c6?logo=typescript)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4.17-38bdf8?logo=tailwindcss)
+![Next.js](https://img.shields.io/badge/Next.js-16.1.0-000?logo=nextdotjs)
+![React](https://img.shields.io/badge/React-19.0.0-61dafb?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178c6?logo=typescript)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.1.18-38bdf8?logo=tailwindcss)
 ![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.3.0-ff6b6b)
 ![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-5.7.0-orange)
+![Version](https://img.shields.io/badge/Version-5.9.1-orange)
 
 </div>
 
@@ -33,39 +33,64 @@
 
 ## 📢 Project Overview
 
-This project is a deeply customized version based on **MoonTV**, continuously developed from **v4.3.1** to the current **v5.7.0**, with **50+ major feature modules** and **300+ detailed optimizations** added. See [CHANGELOG](CHANGELOG) for all new features.
+This project is a deeply customized version based on **MoonTV**, continuously developed from **v4.3.1** to the current **v5.9.1**, with **60+ major feature modules** and **400+ detailed optimizations** added. See [CHANGELOG](CHANGELOG) for all new features.
 
 ### 💡 Core Enhancement Highlights
 
 #### 🎥 Content Ecosystem Expansion
 - **YouTube Integration**: Complete YouTube search, playback, live streaming with cookieless domain support
 - **Cloud Drive Search (PanSou)**: Integrated advanced filtering and cache management
-- **Short Drama Features**: Search, playback, dedicated detail pages, mobile API proxy
+- **ACG Torrent Search**: Integrated ACG anime torrent resource search for rich anime content access
+- **Short Drama Features**: Search, playback, dedicated detail pages, mobile API proxy, auto-skip to next episode when backup API unavailable
 - **IPTV Live TV**: m3u/m3u8 subscriptions, EPG program guide (multi-source & url-tvg support), source aggregation, logo proxy, channel search within current source, live source tab quick search
 - **Bangumi Anime**: Intelligent anime detection, API integration, caching mechanism
 
 #### 🤖 AI Recommendation System
-- **AI Content Recommendations**: Support for GPT-5/o series models, dynamic prompt management
+- **AI Smart Assistant**: Global AI recommendation button (ModernNav header), GPT-5/o series support, dynamic prompts, 85-90% input latency optimization, streaming transmission, orchestrator, video context support, integrated Douban and TMDB data, auto TMDB search when ID missing
+- **Tavily Search Mode**: Supports Tavily search mode without AI API requirement, flexible API verification, SSE streaming, friendly user guidance
 - **Multiple Card Types**: Video recommendations, YouTube videos, video link parsing
 - **TMDB Actor Search**: Complete actor search, filtering, and caching
-- **Release Calendar & Upcoming Releases**: Upcoming content preview and tracking, support favoriting upcoming releases, automatically becomes playable after release
+- **Interactive Actor Works Viewer**: Inline actor works display in play page, 2-hour cache, TMDB fallback source
+- **Release Calendar & Upcoming Releases**: Upcoming content preview and tracking, support favoriting upcoming releases, automatically becomes playable after release, 2026 release data crawler
 
 #### 💬 Danmaku Ecosystem
 - **Third-party Danmaku API**: Integrated Tencent Video, iQiyi, Youku, Bilibili platforms, smart content matching prevents trailers
 - **Smart Performance Optimization**: Device-based tiered rendering, Web Worker acceleration, hardware acceleration
-- **Complete Configuration System**: Font size, speed, opacity, display area, anti-overlap adjustments
+- **Comprehensive Settings Panel**: Integrated danmaku settings panel in global settings, supporting font size, speed, opacity, display area, anti-overlap adjustments
 - **Smart Caching**: localStorage persistence, 30-minute cache, auto cleanup of expired data
 - **Web-exclusive Input**: Simple "Danmu" button for quick sending (auto-hidden on mobile)
 
 #### 📊 User Management Enhancement
+- **Multi-Provider OIDC Authentication**: Support multiple OAuth providers simultaneously (Google, Microsoft, GitHub, Facebook, WeChat, Apple, LinuxDo), users can choose their preferred login method
+  - **GitHub OAuth**: Auto-adapts non-standard OIDC implementation, supports private email retrieval, dedicated API headers
+  - **Apple Sign In**: Complete form_post response mode support, id_token parsing, JWKS signature verification
+  - **Facebook OAuth**: Graph API v24.0 integration, supports avatar and user info retrieval
+  - **WeChat Login**: Web app QR code login, supports openid and user info retrieval
+  - **Backward Compatible**: Supports automatic migration from legacy single-provider configuration
+- **V2 User Storage System**: SHA256 encryption, improved user management and OIDC integration
 - **Telegram Magic Link Authentication**: Secure and convenient Telegram-based login with auto webhook configuration
 - **User Level System**: Replaces large login count numbers with friendly level display
-- **Playback Statistics**: Complete viewing data statistics, analysis, visualization, global/personal stats tab switching
+- **Playback Statistics**: Complete viewing data statistics, analysis, visualization, global/personal stats tab switching, favorites API performance monitoring
 - **Dual Reminder System**: New episodes (red theme) and continue watching (blue theme) with gradient badges and halo effects
+- **Global Favorites**: Cross-device synchronized favorites system, database storage, category filtering (movies, series, variety shows, short dramas, anime)
 - **User Group Permissions**: Fine-grained permission control for AI Assistant, YouTube features
 - **Inactive User Cleanup**: Smart auto-cleanup with detailed configuration and logging
 
 #### 🎮 Player Feature Enhancement
+- **Liquid-glass Frosted Glass Control Bar**: Modern frosted glass effect control bar with 12px blur background, responsive button auto-sizing, perfectly solves mobile button overflow issues
+- **Watch Room Feature**: Real-time synchronized viewing experience with external server integration
+  - **Global Buttons**: Watch room buttons integrated into global layout, positioned above back-to-top button
+  - **Room Management**: Create/join/leave/disband rooms, supports host permission control
+  - **Playback Sync**: Auto-sync play, pause, seek, episode switching
+  - **User Status**: Display room members, connection status indicators
+  - **Video Cards**: Show current playing content with poster and info
+  - **Smart Follow**: Members auto-follow when host switches episodes (no confirmation needed)
+  - **Source Switch Confirmation**: Confirmation dialog when switching video source to prevent accidental interruption
+- **M3U8 Download**: Client-side M3U8 video download support, batch episode download
+- **Player Buffer Optimization**: Three buffer modes (data-saving, balanced, high-quality), smart network adaptation
+- **Netflix-style Smart Speed Test**: Real-time network speed testing, intelligent early stop mechanism, auto-recommend optimal buffer mode
+- **Anime4K Super Resolution**: WebGPU-accelerated real-time video super-resolution for quality enhancement
+- **Custom Ad Filter**: Support custom ad filtering rule code, separate reset and restore default buttons
 - **Chromecast Casting**: Smart browser detection, auto-excludes OPPO, Xiaomi, Huawei, Samsung vendor browsers
 - **iPad/iOS Optimization**: HLS.js official source optimization, smart device detection, multi-attempt autoplay strategy
 - **Skip Intro/Outro**: Real-time marking button, draggable floating config window, remaining time mode, position persistence
@@ -74,6 +99,9 @@ This project is a deeply customized version based on **MoonTV**, continuously de
 - **Episode Group Scrolling**: Playback page episode selection supports scroll pagination for smooth browsing
 
 #### 📱 Interface Experience Optimization
+- **Netflix-style HeroBanner**: Homepage hero banner with trailer autoplay and backdrop, backdrop placeholder support, auto-refresh Douban trailer URLs on expiry (localStorage persistence + 403 error auto-retry), perfectly solves trailer cache expiration issues
+- **Material UI Tabs CategoryBar**: Brand new industrial-style category selector for live TV and playback pages, using Material UI Tabs for reliable scrolling and responsive design, replacing previous manual scroll implementation
+- **Netflix-style Badge System**: Unified all badges (episode badges, notification badges, source indicators) with Netflix-style design and glassmorphism effect control buttons
 - **Hero Banner Full Category Support**: Homepage auto-rotating hero banner supports all content types (movies, series, variety shows, short dramas, anime), gradient background design
 - **Modern Navigation UI**: Desktop horizontal top navbar, mobile Liquid Glass bottom navigation, responsive switching
 - **Mobile Banner Optimization**: Swipeable card-style layout with touch gesture navigation, better suited for mobile devices
@@ -81,8 +109,10 @@ This project is a deeply customized version based on **MoonTV**, continuously de
 - **Virtual Scrolling**: react-window 2.2.0, smooth loading for massive content, smart container size detection (ResizeObserver)
 - **Virtual Scrolling Toggle**: Gradient styles, icons, animations, user switchable display modes
 - **Responsive Grid**: 2-8 column adaptive, auto-calculated optimal layout
-- **Douban Details Enhancement**: Complete rating, cast & crew, premiere date, duration, production info, poster proxy to prevent 403 errors
+- **Douban Details Enhancement**: Complete rating, cast & crew, premiere date, duration, production info, poster proxy to prevent 403 errors, 24-hour cache optimization
+- **Douban Reviews Integration**: Play page displays Douban user reviews, providing richer film discussion and viewing experience
 - **Celebrity Avatars & Recommendations**: Play page displays celebrity avatars (supports celebrity and personage URLs), similar movie recommendations, smart image proxy (auto-migrate from direct to server mode)
+- **Completed Series Episode Count**: Search and category pages display total episode count for completed series, helping users understand content scale at a glance
 - **User Menu Features**: Update reminders, continue watching (with new episode badges), favorites quick access, TVBox settings integration
 - **Login Interface Modernization**: Dynamic random wallpapers, gradient cards, responsive design
 - **Back to Top Button**: Quick return for long pages like release calendar
@@ -96,9 +126,11 @@ This project is a deeply customized version based on **MoonTV**, continuously de
   - Regular user access support (`/api/tvbox-config` endpoint)
 - **Adult Content Management**: Dual-layer filtering system, auto-detection, batch operations, user/group-level controls
 - **Video Source Import/Export**: Array/config file format export, backup & migration, quick copy buttons
+- **Fallback API Support**: Search and homepage data loading support fallback APIs, auto-switching when primary API fails, improving system stability and availability
 - **Source Browser & Testing Module**: Source testing, health checks, mobile responsive layout
 - **Resource Search API Authentication**: Enhanced security with user authentication
 - **Calendar Cache Migration**: Migrated from localStorage to database, cross-device sync support
+- **Favorites Database Storage**: Global favorites data stored in database, supporting cross-device sync and category management
 - **Cache Optimization**: Unified cache management (YouTube, cloud drive, Douban, danmaku)
 - **Enhanced Storage Modes**: Full Kvrocks/Redis/Upstash support, memory cache prevents QuotaExceededError
 - **User Registration System** (configurable toggle)
@@ -132,18 +164,19 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 ## ✨ Complete Feature List
 
 ### 🎬 Content Aggregation
-- ✅ Multi-source video aggregation search (streaming output, smart variants, language-aware filtering)
+- ✅ Multi-source video aggregation search (streaming output, smart variants, language-aware filtering, fallback API support)
 - ✅ YouTube integration (search, live streaming, iframe playback, time filtering & sorting)
 - ✅ Cloud drive search (PanSou integration, advanced filtering, cache management)
 - ✅ Short drama features (search, playback, dedicated detail pages, mobile API proxy)
 - ✅ IPTV live TV (m3u subscriptions, EPG guide, multi-source support, url-tvg, source aggregation, channel search)
 - ✅ Bangumi anime (info detection, API integration, 3-6 digit ID support)
 - ✅ TMDB actor search (filtering, caching)
+- ✅ Completed series episode count (displays total episode count on search and category pages)
 
 ### 🤖 Smart Recommendations
 - ✅ AI recommendation system (GPT-5/o support, dynamic prompts)
 - ✅ Release calendar (upcoming content preview)
-- ✅ Douban details enhancement (complete cast & crew info)
+- ✅ Douban details enhancement (complete cast & crew info, user reviews display)
 - ✅ Smart search optimization (language-aware, fuzzy matching)
 
 ### 💬 Danmaku System
@@ -160,17 +193,19 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 - ✅ User level system (replaces large login count numbers)
 - ✅ Playback statistics (watch time, video count, recent records, global/personal tab switching)
 - ✅ Dual reminder system (new episodes red theme, continue watching blue theme, gradient badges)
+- ✅ Global favorites (cross-device sync, database storage, category filtering: movies/series/variety/short dramas/anime)
 - ✅ VideoCard watch update display (replaces popup-style updates)
 - ✅ User group permissions (AI, YouTube feature control)
 - ✅ Inactive user auto-cleanup (smart config, logging)
 - ✅ Login time tracking (enhanced admin analytics)
 
 ### 🎮 Player Enhancement
+- ✅ Liquid-glass frosted glass control bar (12px blur, responsive buttons, perfect mobile adaptation)
 - ✅ Chromecast casting (smart browser detection, excludes vendor browsers)
 - ✅ iPad/iOS optimization (HLS.js official source optimization, smart device detection, multi-attempt autoplay retry)
 - ✅ Skip intro/outro (real-time marking button, draggable floating window, remaining time mode, cross-episode support)
 - ✅ Live DVR detection (auto-detect DVR/timeshift support after player loads, display seekable time range, one-click enable progress bar mode)
-- ✅ Danmaku config panel (desktop display, mobile hidden)
+- ✅ Danmaku config panel (desktop display, mobile hidden, optimized display and interaction)
 - ✅ Volume control optimization (hover area optimization, precise detection)
 - ✅ Episode switching optimization (debounce, state management, correct playback time reset)
 - ✅ Episode group scroll pagination (smooth browsing for large episode counts)
@@ -184,6 +219,8 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 - ✅ Virtual scrolling toggle (gradient styles, icons, animations, user switchable)
 - ✅ Responsive grid (2-8 column adaptive, actual container width dynamic calculation)
 - ✅ Douban details enhancement (rating, cast & crew, premiere date, duration, production info, poster proxy to prevent 403)
+- ✅ Douban reviews integration (play page displays user reviews, enriched viewing experience)
+- ✅ Completed series episode count (search and category pages display total episode count, content scale at a glance)
 - ✅ User menu enhancement (update reminders, continue watching with new episode badges, favorites quick access, TVBox settings)
 - ✅ Login/register modernization (dynamic random wallpapers, gradient cards, responsive design)
 - ✅ Back to top button (long pages like release calendar)
@@ -197,11 +234,13 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 - ✅ TVBox intelligent search proxy (adult content filtering, path prefix support, UI controls)
 - ✅ Adult content management system (dual-layer filtering, auto-detection, batch operations, user/group-level controls)
 - ✅ Video source import/export (array/config file formats, backup & migration, quick copy buttons)
+- ✅ Fallback API support (primary API failure auto-switching, improved system stability)
 - ✅ TVBox deep diagnostics (JAR file header verification, smart health check, config field display)
 - ✅ Spider management system (multi-JAR backup sources, fallback proxy, gaotianliuyun third backup source)
 - ✅ Source browser & testing module (source testing, health checks, mobile responsive)
 - ✅ Resource search API authentication (enhanced security)
 - ✅ Calendar cache database migration (cross-device sync)
+- ✅ Favorites database storage (cross-device sync, category management)
 - ✅ Unified cache management system (YouTube, cloud drive, Douban, danmaku)
 - ✅ Kvrocks/Redis/Upstash storage (full compatibility handling)
 - ✅ Memory cache prevents QuotaExceededError (Kvrocks/Upstash memory cache)
@@ -244,16 +283,16 @@ This project is licensed under **CC BY-NC-SA 4.0**, with the following terms:
 
 | Category      | Main Dependencies                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| Frontend      | [Next.js 14.2.23](https://nextjs.org/) · App Router                                                           |
-| UI & Styling  | [Tailwind CSS 3.4.17](https://tailwindcss.com/) · [Framer Motion 12](https://www.framer.com/motion/)          |
-| Language      | TypeScript 4.9.5                                                                                               |
+| Frontend      | [Next.js 16.1.0](https://nextjs.org/) · App Router                                                           |
+| UI & Styling  | [Tailwind CSS 4.1.18](https://tailwindcss.com/) · [Framer Motion 12.18.1](https://www.framer.com/motion/)          |
+| Language      | TypeScript 5.8.3                                                                                               |
 | Player        | [ArtPlayer 5.3.0](https://github.com/zhw2590582/ArtPlayer) · [HLS.js 1.6.15](https://github.com/video-dev/hls.js/) · [artplayer-plugin-danmuku 5.2.0](https://github.com/zhw2590582/ArtPlayer) |
-| State Mgmt    | React Context API · React Hooks                                                                                |
+| State Mgmt    | React 19.0.0 Context API · React Hooks                                                                                |
 | Data Storage  | Kvrocks · Redis · Upstash · localStorage                                                                       |
-| Virtualization| [react-window 2.2.0](https://github.com/bvaughn/react-window) · ResizeObserver                                |
-| UI Components | [@headlessui/react 2](https://headlessui.com/) · [Lucide Icons](https://lucide.dev/) · [React Icons 5](https://react-icons.github.io/react-icons/) |
-| Code Quality  | ESLint · Prettier · Jest · Husky                                                                               |
-| Deployment    | Docker · Docker Compose                                                                                        |
+| Virtualization| [react-window 2.2.3](https://github.com/bvaughn/react-window) · ResizeObserver                                |
+| UI Components | [@headlessui/react 2.2.4](https://headlessui.com/) · [Lucide Icons 0.438.0](https://lucide.dev/) · [React Icons 5.4.0](https://react-icons.github.io/react-icons/) |
+| Code Quality  | ESLint 9.28.0 · Prettier 3.5.3 · Jest 29.7.0 · Husky 7.0.4                                                                               |
+| Deployment    | Docker · Docker Compose · pnpm 10.14.0                                                                                        |
 
 ---
 
@@ -886,36 +925,74 @@ This project works with [OrionTV](https://github.com/zimplexing/OrionTV) on Andr
 
 For complete feature updates and bug fixes, see [CHANGELOG](CHANGELOG).
 
-### Latest Version: v5.7.0 (2025-12-06)
+### Latest Version: v5.9.1 (2025-12-31)
 
 #### Added
-- 🎭 Celebrity Avatars and Recommendations: Display celebrity avatars and similar movie recommendations on play page
-- 🔍 Live Source Tab Search: Add search functionality to live source tabs for quick channel lookup
+- 🎨 Glassmorphism Design for Control Buttons: Apply glassmorphism effect to control buttons
+- 🚀 CMS Proxy and Adult Content Filtering Enhancement: Added CMS proxy and enhanced adult content filtering
+- ⚡ Image Proxy Timeout and CORS Support: Optimized image proxy with timeout control and CORS support
+- 🔍 ACG Torrent Search Integration: Added ACG torrent search functionality
+- 🛠️ cn() Utility Function: Added cn() utility for Tailwind class merging
+- 🔐 Multi-Provider OIDC Editor Callback URL Copy Button: Quick copy callback URLs in admin OIDC editor
+- 🎯 Douban Proxy API: Added Douban proxy API with unstable_cache and useDoubanInfo hook
+- 📊 Douban 24-hour Cache and Enhanced Avatar Extraction: 24-hour cache for Douban data with improved celebrity avatar extraction
+- 🎨 CategoryBar Material UI Tabs: Industrial-style CategoryBar for live TV and playback pages using Material UI Tabs
+- 🎬 Netflix-style Badge System: Unified all badges (episode, notification, source indicator) with Netflix-style design
+- 📅 Upcoming Releases Tab: Added upcoming content tab feature
+- 🤖 AI Feature Comprehensive Enhancement: Streaming, orchestrator, video context support, Douban/TMDB integration, auto TMDB search when ID missing
+- 🔔 Custom Confirmation Dialog: Added optional confirmation dialogs for clear operations and continue watching record deletion
+- 🤖 Tavily-Only Mode Support: Search mode without AI API requirement, flexible API validation
+- 🎬 Netflix-style HeroBanner: Hero banner with trailer and backdrop, backdrop placeholder support
+- 🎥 Video Proxy and Image URL Redirect Fix: Added video proxy and fixed image URL redirects
+- 🔍 Debug Mode Console Toggle: Added debug mode with console toggle to bypass cache
+- 👥 Watch Room Source Switch Confirmation: Confirmation dialog for watch room source switching, douban_id support in playback records
+- ⚡ Netflix-style Smart Speed Test: Real-time speed test with intelligent early stop
+- 📊 Tavily API Usage Tracking: Track Tavily API usage in AI config with single key refresh
+- 🔍 2026 Release Data Crawler: Homepage crawler for 2026 release data
 
-#### Improved
-- 🖼️ Default Image Proxy Mode Changed to Server: Changed default image proxy from direct to server mode across all components
-- 📅 Celebrity Info Display Optimization: Add tooltips for celebrity names and roles to prevent text truncation
-- 📦 Dependency Upgrade: Upgrade hls.js to v1.6.15
+#### Performance Optimizations
+- 📱 Play Page UI Enhancement: Mobile-first design with reorganized controller layout
+- 🎨 LinuxDo OIDC Logo Update: Official design logo with UI adaptation
+- ⚡ Tailwind v4 Canonical Syntax Upgrade: Upgraded to Tailwind v4 canonical syntax
+- 🔄 Replace Manual Scroll with Native scrollIntoView API: Use browser native API instead of manual scroll implementation
+- ⚡ Search Performance Optimization: Optimized season search digit variant generation and variant search strategy
+- 🔄 Replace Native confirm with Custom ConfirmDialog: Use custom confirmation dialog component
+- ⚡ Enable Virtualization for All HomePage ScrollableRows: Fix mobile lag issues
+- ⚙️ HeroBanner Optimization: Standardized 4-hour cache duration, performance refactoring, extracted custom hooks
+- 🔄 Elevate AI Permission Check to Page Level: Consistent state management implementation
+- 🚀 Upgrade All Crawlers and Proxies to 2025 Best Practices: Comprehensive optimization of crawler and proxy implementations
 
 #### Fixed
-- 🖼️ Fix Celebrity Avatar Display Issues:
-  - Support both `/celebrity/` and `/personage/` URL formats
-  - Filter default placeholder avatars
-  - Implement automatic image proxy fix (migrate from direct to server mode)
-  - Auto-migrate legacy localStorage configurations
-- 📱 Fix Recommendation Card Mobile Navigation:
-  - Use capture phase event listeners to intercept VideoCard internal events
-  - Add long press detection (500ms) to preserve action menu functionality
-  - Fix mobile tap jumping to page top issue
-  - Preserve all VideoCard hover effects and UI display
-- 🎯 Fix Recommendation Card Event Conflicts:
-  - Use `addEventListener` capture mode to prioritize event interception
-  - Add `stopImmediatePropagation` to prevent event interference
-  - Short tap navigates, long press shows menu, perfect mobile and desktop compatibility
-- 🔧 Fix Date Calculation Inconsistency: Fix date calculation differences between homepage and release calendar
+- 🐛 Fixed Watch Room Stats Fetching Before Config Save: Separate saved config and local input state to prevent premature API calls
+- 🐛 Fixed OIDC User Login Time Recording: Immediately record login time for existing and new users, resolve unknown time and pending activation status issues
+- 🐛 Fixed Old Mobile Browser backdrop-filter Compatibility: Use 95% opacity solid background instead of blur effect, auto-fixed 36 files using backdrop-blur classes
+- 🐛 Fixed Missing or Invalid Poster Image Display: VideoCard sets fallback SVG placeholder after image load failure, filter empty vod_pic fields
+- 🐛 Fixed Modal Content Truncation: Fixed Tailwind modal structure, OIDC modal, OIDC provider modal desktop scrolling and other content truncation issues
+- 🐛 Improved Mobile Responsiveness: Optimized mobile display and layout for auth pages, watch room, and OIDC config
+- 🐛 Fixed Search Results Artificial Limit Discarding Valid Matches: Removed artificial result count limits
+- 🐛 Fixed Live CategoryBar Scrolling Issues: Resolved scroll loop, jump, manual/auto conflicts caused by object dependencies
+- 🐛 Fixed Back to Top Button: Fixed play page ACG and cloud drive modal back to top button positioning and functionality
+- 🐛 Simplified Inactive User Cleanup Logic: Only check last login time
+- 🐛 Fixed Docker Related Issues: Resolved short drama API issues, HTTPS support, config cache problems
+- 🐛 Unified HomePage and UserMenu Release Date Calculation: Standardized date calculation logic across components
+- 🐛 Added Hover Scale Animation for Regular User Stats VideoCard Halo Effect: Improved interaction effects
+- 🤖 AI Feature Fixes and Improvements: Fixed recommendation extraction, YouTube parsing, streaming mode, Markdown rendering, Tavily API key input, welcome message, chat history sync
+- 🤖 Tavily Search Mode Optimization: SSE streaming support, removed default value fallback, improved user guidance
+- 🤖 AI Streaming Optimization: Immediately show chat messages, Markdown format welcome message, display preset buttons
+- 🤖 AI Assistant Dynamic Site Name Adaptation: Auto-adapt to site name
+- 🎨 Fixed Sticky Filter Bar Issues: Use negative margin technique to eliminate gaps, fix content penetration, precise responsive negative top values
+- 🎬 Fixed Episode Number Retention When Switching Sources: Resolve episode number loss after source switching
+- 🎬 Fixed HeroBanner Issues: First load video autoplay, adjust banner height, enable video, use stills as background, fix anime category
+- 👥 Fixed Watch Room Source Switching: Improved source switch detection, use doubanId and title+year to match videos
+- 📱 Fixed Old iOS Safari Auth Page Crash: Resolved iOS Safari compatibility issues
+- 🎬 Fixed Douban Trailer Cache Issues: Resolved trailer URL expiration, adjusted CDN cache and unstable_cache strategy, reduced CDN cache from 24h to 30min
 
 ### Major Milestone Versions
 
+- **v5.9.1**: Glassmorphism Design, Material UI CategoryBar, Netflix-style HeroBanner, AI Feature Comprehensive Enhancement, Douban Cache Optimization
+- **v5.9.0**: Multi-Provider OIDC (GitHub/Apple/Facebook/WeChat), Watch Room, M3U8 Download, Anime4K Super Resolution, Player Buffer Optimization
+- **v5.8.0**: Next.js 16.1 + React 19 + Tailwind CSS 4.1, AI Chat Performance Optimization, Actor Works Viewer, Danmaku Settings Panel
+- **v5.7.1**: Liquid-glass Frosted Glass Control Bar, Douban Reviews, Global Favorites, Fallback API, Completed Series Episode Count
 - **v5.7.0**: Celebrity Avatars & Recommendations, Live Source Search, Image Proxy Optimization, Mobile Navigation Fixes
 - **v5.6.3**: Short Drama Multi-source Search, Smart Source Filtering, Upcoming Smart Distribution, Comprehensive z-index Conflict Fixes
 - **v5.6.2**: Upcoming Release Calendar, Hero Banner Full Category Support, Live DVR Detection, Mobile Banner Optimization
@@ -991,6 +1068,13 @@ Based on [MoonTV](https://github.com/MoonTechLab/LunaTV) with extensive customiz
 - [Bangumi](https://bangumi.tv/) — Anime information
 - [Zwei](https://github.com/bestzwei) — Douban CORS proxy
 - [CMLiussss](https://github.com/cmliu) — Douban CDN service
+
+### Design & Implementation References
+This project references design concepts and implementation approaches from the following excellent open-source projects:
+- **[MoonTVPlus](https://github.com/mtvpls/MoonTVPlus)** — Watch room sync playback, mobile optimization, and other feature implementations
+- **[DecoTV](https://github.com/Decohererk/DecoTV)** — TVBox security strategies, performance optimization, UI design, and other implementations
+
+Thanks to these projects and their authors for their open-source contributions and excellent implementations!
 
 ### Special Thanks
 - All sites providing free video APIs

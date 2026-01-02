@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-console, @typescript-eslint/no-non-null-assertion */
 
+import { unstable_noStore } from 'next/cache';
+
 import { db } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
@@ -296,10 +298,12 @@ async function getInitConfig(configFile: string, subConfig: {
 }
 
 export async function getConfig(): Promise<AdminConfig> {
-  // 直接使用内存缓存
-  if (cachedConfig) {
-    return cachedConfig;
-  }
+  // 🔥 防止 Next.js 在 Docker 环境下缓存配置（解决站点名称更新问题）
+  unstable_noStore();
+
+  // 🔥 完全移除内存缓存检查 - Docker 环境下模块级变量不会被清除
+  // 参考：https://nextjs.org/docs/app/guides/memory-usage
+  // 每次都从数据库读取最新配置，确保动态配置立即生效
 
   // 读 db
   let adminConfig: AdminConfig | null = null;
@@ -314,9 +318,11 @@ export async function getConfig(): Promise<AdminConfig> {
     adminConfig = await getInitConfig("");
   }
   adminConfig = await configSelfCheck(adminConfig);
+
+  // 🔥 仍然更新 cachedConfig 以保持向后兼容，但不再依赖它
   cachedConfig = adminConfig;
-  db.saveAdminConfig(cachedConfig);
-  return cachedConfig;
+
+  return adminConfig;
 }
 
 // 清除配置缓存，强制重新从数据库读取
@@ -339,7 +345,7 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
     const ownerUser = process.env.USERNAME;
 
     // 创建用户列表：保留数据库中存在的用户的配置信息
-    const updatedUsers = dbUsers.map(username => {
+    const updatedUsers = await Promise.all(dbUsers.map(async username => {
       // 查找现有配置中是否有这个用户
       const existingUserConfig = adminConfig.UserConfig.Users.find(u => u.username === username);
 
@@ -348,13 +354,53 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
         return existingUserConfig;
       } else {
         // 新用户，创建默认配置
-        return {
+        let createdAt = Date.now();
+        let oidcSub: string | undefined;
+        let tags: string[] | undefined;
+        let role: 'owner' | 'admin' | 'user' = username === ownerUser ? 'owner' : 'user';
+        let banned = false;
+        let enabledApis: string[] | undefined;
+
+        try {
+          // 从数据库V2获取用户信息（OIDC/新版用户）
+          const userInfoV2 = await db.getUserInfoV2(username);
+          console.log(`=== configSelfCheck: 用户 ${username} 数据库信息 ===`, userInfoV2);
+          if (userInfoV2) {
+            createdAt = userInfoV2.createdAt || Date.now();
+            oidcSub = userInfoV2.oidcSub;
+            tags = userInfoV2.tags;
+            role = userInfoV2.role || role;
+            banned = userInfoV2.banned || false;
+            enabledApis = userInfoV2.enabledApis;
+            console.log(`=== configSelfCheck: 用户 ${username} tags ===`, tags);
+          }
+        } catch (err) {
+          console.warn(`获取用户 ${username} 信息失败:`, err);
+        }
+
+        const newUserConfig: any = {
           username,
-          role: username === ownerUser ? ('owner' as const) : ('user' as const),
-          banned: false,
+          role,
+          banned,
+          createdAt,
         };
+
+        if (oidcSub) {
+          newUserConfig.oidcSub = oidcSub;
+        }
+        if (tags && tags.length > 0) {
+          newUserConfig.tags = tags;
+          console.log(`=== configSelfCheck: 用户 ${username} 最终配置包含tags ===`, newUserConfig.tags);
+        } else {
+          console.log(`=== configSelfCheck: 用户 ${username} 没有tags (tags=${tags}) ===`);
+        }
+        if (enabledApis && enabledApis.length > 0) {
+          newUserConfig.enabledApis = enabledApis;
+        }
+
+        return newUserConfig;
       }
-    });
+    }));
 
     // 更新用户列表
     adminConfig.UserConfig.Users = updatedUsers;
@@ -417,6 +463,51 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
       alternativeApiUrl: '',                            // 默认为空，需要管理员配置
       enableAlternative: false,                         // 默认关闭备用API
     };
+  }
+
+  // 确保下载配置有默认值
+  if (!adminConfig.DownloadConfig) {
+    adminConfig.DownloadConfig = {
+      enabled: true,                                    // 默认启用下载功能
+    };
+  }
+
+  // 🔥 OIDC 配置迁移：从单 Provider 迁移到多 Provider
+  if (adminConfig.OIDCAuthConfig && !adminConfig.OIDCProviders) {
+    // 自动识别 Provider ID
+    let providerId = 'custom';
+    const issuer = adminConfig.OIDCAuthConfig.issuer?.toLowerCase() || '';
+
+    if (issuer.includes('google') || issuer.includes('accounts.google.com')) {
+      providerId = 'google';
+    } else if (issuer.includes('github')) {
+      providerId = 'github';
+    } else if (issuer.includes('microsoft') || issuer.includes('login.microsoftonline.com')) {
+      providerId = 'microsoft';
+    } else if (issuer.includes('linux.do') || issuer.includes('connect.linux.do')) {
+      providerId = 'linuxdo';
+    }
+
+    // 迁移到新格式
+    adminConfig.OIDCProviders = [{
+      id: providerId,
+      name: adminConfig.OIDCAuthConfig.buttonText || providerId.toUpperCase(),
+      enabled: adminConfig.OIDCAuthConfig.enabled,
+      enableRegistration: adminConfig.OIDCAuthConfig.enableRegistration,
+      issuer: adminConfig.OIDCAuthConfig.issuer,
+      authorizationEndpoint: adminConfig.OIDCAuthConfig.authorizationEndpoint,
+      tokenEndpoint: adminConfig.OIDCAuthConfig.tokenEndpoint,
+      userInfoEndpoint: adminConfig.OIDCAuthConfig.userInfoEndpoint,
+      clientId: adminConfig.OIDCAuthConfig.clientId,
+      clientSecret: adminConfig.OIDCAuthConfig.clientSecret,
+      buttonText: adminConfig.OIDCAuthConfig.buttonText,
+      minTrustLevel: adminConfig.OIDCAuthConfig.minTrustLevel || 0,
+    }];
+
+    console.log(`[Config Migration] Migrated OIDCAuthConfig to OIDCProviders with provider: ${providerId}`);
+
+    // 保留旧配置一段时间以防回滚需要
+    // delete adminConfig.OIDCAuthConfig;
   }
 
   // 站长变更自检

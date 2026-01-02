@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Brain, ChevronRight, Film, Tv, Calendar, Sparkles, Play } from 'lucide-react';
+import { ChevronRight, Film, Tv, Calendar, Sparkles, Play, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -24,7 +24,6 @@ import { getDoubanCategories, getDoubanDetails } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
-import AIRecommendModal from '@/components/AIRecommendModal';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import HeroBanner from '@/components/HeroBanner';
@@ -36,12 +35,14 @@ import SkeletonCard from '@/components/SkeletonCard';
 import { useSite } from '@/components/SiteProvider';
 import { TelegramWelcomeModal } from '@/components/TelegramWelcomeModal';
 import VideoCard from '@/components/VideoCard';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 function HomeClient() {
   const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
+  const [hotAnime, setHotAnime] = useState<DoubanItem[]>([]);
   const [hotShortDramas, setHotShortDramas] = useState<ShortDramaItem[]>([]);
   const [bangumiCalendarData, setBangumiCalendarData] = useState<
     BangumiCalendarData[]
@@ -52,9 +53,6 @@ function HomeClient() {
   const [username, setUsername] = useState<string>('');
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
-  const [showAIRecommendModal, setShowAIRecommendModal] = useState(false);
-  const [aiEnabled, setAiEnabled] = useState<boolean | null>(true); // 默认显示，检查后再决定
-  const [aiCheckTriggered, setAiCheckTriggered] = useState(false); // 标记是否已检查AI状态
 
   // 合并初始化逻辑 - 优化性能，减少重渲染
   useEffect(() => {
@@ -62,6 +60,14 @@ function HomeClient() {
     const authInfo = getAuthInfoFromBrowserCookie();
     if (authInfo?.username) {
       setUsername(authInfo.username);
+    }
+
+    // 读取清空确认设置
+    if (typeof window !== 'undefined') {
+      const savedRequireClearConfirmation = localStorage.getItem('requireClearConfirmation');
+      if (savedRequireClearConfirmation !== null) {
+        setRequireClearConfirmation(JSON.parse(savedRequireClearConfirmation));
+      }
     }
 
     // 检查公告弹窗状态
@@ -74,68 +80,6 @@ function HomeClient() {
       }
     }
   }, [announcement]);
-
-  // 延迟检查AI功能状态，避免阻塞页面初始渲染
-  useEffect(() => {
-    if (aiCheckTriggered || typeof window === 'undefined') return;
-
-    let idleCallbackId: number | undefined;
-    let timeoutId: number | undefined;
-    let cancelled = false;
-
-    const checkAIStatus = async () => {
-      if (cancelled) return;
-      try {
-        const response = await fetch('/api/ai-recommend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: 'test' }],
-          }),
-        });
-        if (!cancelled) {
-          setAiEnabled(response.status !== 403);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setAiEnabled(true);
-        }
-      } finally {
-        if (!cancelled) {
-          setAiCheckTriggered(true);
-        }
-      }
-    };
-
-    const win = window as typeof window & {
-      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-
-    if (typeof win.requestIdleCallback === 'function') {
-      idleCallbackId = win.requestIdleCallback(() => {
-        checkAIStatus().catch(() => {
-          // 错误已在内部处理
-        });
-      }, { timeout: 1500 });
-    } else {
-      timeoutId = window.setTimeout(() => {
-        checkAIStatus().catch(() => {
-          // 错误已在内部处理
-        });
-      }, 800);
-    }
-
-    return () => {
-      cancelled = true;
-      if (idleCallbackId !== undefined && typeof win.cancelIdleCallback === 'function') {
-        win.cancelIdleCallback(idleCallbackId);
-      }
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [aiCheckTriggered]);
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -156,6 +100,9 @@ function HomeClient() {
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
   const [favoriteFilter, setFavoriteFilter] = useState<'all' | 'movie' | 'tv' | 'anime' | 'shortdrama' | 'live' | 'variety'>('all');
   const [favoriteSortBy, setFavoriteSortBy] = useState<'recent' | 'title' | 'rating'>('recent');
+  const [upcomingFilter, setUpcomingFilter] = useState<'all' | 'movie' | 'tv'>('all');
+  const [showClearFavoritesDialog, setShowClearFavoritesDialog] = useState(false);
+  const [requireClearConfirmation, setRequireClearConfirmation] = useState(false);
 
   useEffect(() => {
     // 清理过期缓存
@@ -165,8 +112,8 @@ function HomeClient() {
       try {
         setLoading(true);
 
-        // 并行获取热门电影、热门剧集、热门综艺、热门短剧和即将上映
-        const [moviesData, tvShowsData, varietyShowsData, shortDramasData, bangumiCalendarData, upcomingReleasesData] =
+        // 并行获取热门电影、热门剧集、热门综艺、热门动漫、热门短剧和即将上映
+        const [moviesData, tvShowsData, varietyShowsData, animeData, shortDramasData, bangumiCalendarData, upcomingReleasesData] =
           await Promise.allSettled([
             getDoubanCategories({
               kind: 'movie',
@@ -175,6 +122,7 @@ function HomeClient() {
             }),
             getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
             getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+            getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv_animation' }),
             getRecommendedShortDramas(undefined, 8),
             GetBangumiCalendarData(),
             fetch('/api/release-calendar?limit=100').then(res => {
@@ -197,8 +145,15 @@ function HomeClient() {
               movies.slice(0, 2).map(async (movie) => {
                 try {
                   const detailsRes = await getDoubanDetails(movie.id);
-                  if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
-                    return { id: movie.id, plot_summary: detailsRes.data.plot_summary };
+                  if (detailsRes.code === 200 && detailsRes.data) {
+                    console.log(`[HeroBanner] 电影 ${movie.title} - trailerUrl:`, detailsRes.data.trailerUrl);
+                    console.log(`[HeroBanner] 电影 ${movie.title} - backdrop:`, detailsRes.data.backdrop);
+                    return {
+                      id: movie.id,
+                      plot_summary: detailsRes.data.plot_summary,
+                      backdrop: detailsRes.data.backdrop,
+                      trailerUrl: detailsRes.data.trailerUrl,
+                    };
                   }
                 } catch (error) {
                   console.warn(`获取电影 ${movie.id} 详情失败:`, error);
@@ -209,7 +164,12 @@ function HomeClient() {
               setHotMovies(prev =>
                 prev.map(m => {
                   const detail = results.find(r => r?.id === m.id);
-                  return detail ? { ...m, plot_summary: detail.plot_summary } : m;
+                  return detail ? {
+                    ...m,
+                    plot_summary: detail.plot_summary,
+                    backdrop: detail.backdrop,
+                    trailerUrl: detail.trailerUrl,
+                  } : m;
                 })
               );
             });
@@ -235,8 +195,13 @@ function HomeClient() {
               tvShows.slice(0, 2).map(async (show) => {
                 try {
                   const detailsRes = await getDoubanDetails(show.id);
-                  if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
-                    return { id: show.id, plot_summary: detailsRes.data.plot_summary };
+                  if (detailsRes.code === 200 && detailsRes.data) {
+                    return {
+                      id: show.id,
+                      plot_summary: detailsRes.data.plot_summary,
+                      backdrop: detailsRes.data.backdrop,
+                      trailerUrl: detailsRes.data.trailerUrl,
+                    };
                   }
                 } catch (error) {
                   console.warn(`获取剧集 ${show.id} 详情失败:`, error);
@@ -247,7 +212,12 @@ function HomeClient() {
               setHotTvShows(prev =>
                 prev.map(s => {
                   const detail = results.find(r => r?.id === s.id);
-                  return detail ? { ...s, plot_summary: detail.plot_summary } : s;
+                  return detail ? {
+                    ...s,
+                    plot_summary: detail.plot_summary,
+                    backdrop: detail.backdrop,
+                    trailerUrl: detail.trailerUrl,
+                  } : s;
                 })
               );
             });
@@ -273,10 +243,15 @@ function HomeClient() {
               const show = varietyShows[0];
               getDoubanDetails(show.id)
                 .then((detailsRes) => {
-                  if (detailsRes.code === 200 && detailsRes.data?.plot_summary) {
+                  if (detailsRes.code === 200 && detailsRes.data) {
                     setHotVarietyShows(prev =>
                       prev.map(s => s.id === show.id
-                        ? { ...s, plot_summary: detailsRes.data!.plot_summary }
+                        ? {
+                            ...s,
+                            plot_summary: detailsRes.data!.plot_summary,
+                            backdrop: detailsRes.data!.backdrop,
+                            trailerUrl: detailsRes.data!.trailerUrl,
+                          }
                         : s
                       )
                     );
@@ -295,6 +270,46 @@ function HomeClient() {
           }
         } else {
           console.warn('获取热门综艺失败:', varietyShowsData.status === 'rejected' ? varietyShowsData.reason : '数据格式错误');
+        }
+
+        // 处理动漫数据
+        if (animeData.status === 'fulfilled' && animeData.value?.code === 200) {
+          const animes = animeData.value.list;
+          setHotAnime(animes);
+
+          // 性能优化：使用 requestIdleCallback 延迟加载详情
+          if (animes.length > 0) {
+            const loadAnimeDetails = () => {
+              const anime = animes[0];
+              getDoubanDetails(anime.id)
+                .then((detailsRes) => {
+                  if (detailsRes.code === 200 && detailsRes.data) {
+                    setHotAnime(prev =>
+                      prev.map(a => a.id === anime.id
+                        ? {
+                            ...a,
+                            plot_summary: detailsRes.data!.plot_summary,
+                            backdrop: detailsRes.data!.backdrop,
+                            trailerUrl: detailsRes.data!.trailerUrl,
+                          }
+                        : a
+                      )
+                    );
+                  }
+                })
+                .catch((error) => {
+                  console.warn(`获取动漫 ${anime.id} 详情失败:`, error);
+                });
+            };
+
+            if ('requestIdleCallback' in window) {
+              requestIdleCallback(loadAnimeDetails, { timeout: 2000 });
+            } else {
+              setTimeout(loadAnimeDetails, 1000);
+            }
+          }
+        } else {
+          console.warn('获取热门动漫失败:', animeData.status === 'rejected' ? animeData.reason : '数据格式错误');
         }
 
         // 处理短剧数据
@@ -631,6 +646,12 @@ function HomeClient() {
     setFavoriteItems(sorted);
   };
 
+  // 处理清空所有收藏
+  const handleClearFavorites = async () => {
+    await clearAllFavorites();
+    setFavoriteItems([]);
+  };
+
   // 当切换到收藏夹时加载收藏数据
   useEffect(() => {
     if (activeTab !== 'favorites') return;
@@ -665,10 +686,10 @@ function HomeClient() {
 
       <div className='overflow-visible -mt-6 md:mt-0'>
         {/* 欢迎横幅 - 现代化精简设计 */}
-        <div className='mb-6 relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-500/90 via-purple-500/90 to-pink-500/90 backdrop-blur-sm shadow-xl border border-white/20'>
+        <div className='mb-6 relative overflow-hidden rounded-xl bg-linear-to-r from-blue-500/90 via-purple-500/90 to-pink-500/90 backdrop-blur-sm shadow-xl border border-white/20'>
           <div className='relative p-4 sm:p-5'>
             {/* 动态渐变背景 */}
-            <div className='absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-black/5'></div>
+            <div className='absolute inset-0 bg-linear-to-br from-white/5 via-transparent to-black/5'></div>
 
             <div className='relative z-10 flex items-center justify-between gap-4'>
               <div className='flex-1 min-w-0'>
@@ -695,15 +716,15 @@ function HomeClient() {
               </div>
 
               {/* 装饰图标 - 更小更精致 */}
-              <div className='hidden md:flex items-center justify-center flex-shrink-0 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20'>
+              <div className='hidden md:flex items-center justify-center shrink-0 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20'>
                 <Film className='w-6 h-6 text-white' />
               </div>
             </div>
           </div>
         </div>
 
-        {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex flex-col sm:flex-row items-center justify-center gap-4'>
+        {/* 顶部 Tab 切换 - AI 按钮已移至右上角导航栏 */}
+        <div className='mb-8 flex items-center justify-center'>
           <CapsuleSwitch
             options={[
               { label: '首页', value: 'home' },
@@ -712,24 +733,6 @@ function HomeClient() {
             active={activeTab}
             onChange={(value) => setActiveTab(value as 'home' | 'favorites')}
           />
-
-          {/* AI推荐按钮 - 只在功能启用时显示，添加脉冲动画 */}
-          {aiEnabled && (
-            <button
-              onClick={() => setShowAIRecommendModal(true)}
-              className='relative flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full font-medium transition-all transform hover:scale-105 shadow-lg hover:shadow-xl group overflow-hidden'
-              title='AI影视推荐'
-            >
-              {/* 脉冲光环 */}
-              <div className='absolute inset-0 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 opacity-0 group-hover:opacity-100 animate-ping'></div>
-
-              {/* 闪烁背景 */}
-              <div className='absolute inset-0 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 opacity-20 animate-pulse'></div>
-
-              <Brain className='h-4 w-4 relative z-10 group-hover:rotate-12 transition-transform duration-300' />
-              <span className='relative z-10'>AI推荐</span>
-            </button>
-          )}
         </div>
 
         <div className='w-full mx-auto'>
@@ -742,15 +745,18 @@ function HomeClient() {
                 </h2>
                 {favoriteItems.length > 0 && (
                   <button
-                    className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
-                    onClick={async () => {
-                      if (confirm('确定要清空所有收藏吗？')) {
-                        await clearAllFavorites();
-                        setFavoriteItems([]);
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-white hover:bg-red-600 dark:text-red-400 dark:hover:text-white dark:hover:bg-red-500 border border-red-300 dark:border-red-700 hover:border-red-600 dark:hover:border-red-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
+                    onClick={() => {
+                      // 根据用户设置决定是否显示确认对话框
+                      if (requireClearConfirmation) {
+                        setShowClearFavoritesDialog(true);
+                      } else {
+                        handleClearFavorites();
                       }
                     }}
                   >
-                    清空收藏
+                    <Trash2 className='w-4 h-4' />
+                    <span>清空收藏</span>
                   </button>
                 )}
               </div>
@@ -855,7 +861,7 @@ function HomeClient() {
                       onClick={() => setFavoriteFilter(key)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                         favoriteFilter === key
-                          ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg scale-105'
+                          ? 'bg-linear-to-r from-blue-500 to-purple-500 text-white shadow-lg scale-105'
                           : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                       }`}
                     >
@@ -954,6 +960,7 @@ function HomeClient() {
 
                   if (item.releaseDate) {
                     const now = new Date();
+                    now.setHours(0, 0, 0, 0); // 归零时间，只比较日期
                     const releaseDate = new Date(item.releaseDate);
                     const daysDiff = Math.ceil((releaseDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -983,7 +990,7 @@ function HomeClient() {
                   <div className='col-span-full flex flex-col items-center justify-center py-16 px-4'>
                     {/* SVG 插画 - 空收藏夹 */}
                     <div className='mb-6 relative'>
-                      <div className='absolute inset-0 bg-gradient-to-r from-pink-300 to-purple-300 dark:from-pink-600 dark:to-purple-600 opacity-20 blur-3xl rounded-full animate-pulse'></div>
+                      <div className='absolute inset-0 bg-linear-to-r from-pink-300 to-purple-300 dark:from-pink-600 dark:to-purple-600 opacity-20 blur-3xl rounded-full animate-pulse'></div>
                       <svg className='w-32 h-32 relative z-10' viewBox='0 0 200 200' fill='none' xmlns='http://www.w3.org/2000/svg'>
                         {/* 心形主体 */}
                         <path d='M100 170C100 170 30 130 30 80C30 50 50 30 70 30C85 30 95 40 100 50C105 40 115 30 130 30C150 30 170 50 170 80C170 130 100 170 100 170Z'
@@ -1011,6 +1018,18 @@ function HomeClient() {
                   </div>
                 )}
               </div>
+
+              {/* 确认对话框 */}
+              <ConfirmDialog
+                isOpen={showClearFavoritesDialog}
+                title="确认清空收藏"
+                message={`确定要清空所有收藏吗？\n\n这将删除 ${favoriteItems.length} 项收藏，此操作无法撤销。`}
+                confirmText="确认清空"
+                cancelText="取消"
+                variant="danger"
+                onConfirm={handleClearFavorites}
+                onCancel={() => setShowClearFavoritesDialog(false)}
+              />
             </section>
           ) : (
             // 首页视图
@@ -1025,6 +1044,8 @@ function HomeClient() {
                         id: movie.id,
                         title: movie.title,
                         poster: movie.poster,
+                        backdrop: movie.backdrop,
+                        trailerUrl: movie.trailerUrl,
                         description: movie.plot_summary,
                         year: movie.year,
                         rate: movie.rate,
@@ -1036,6 +1057,8 @@ function HomeClient() {
                         id: show.id,
                         title: show.title,
                         poster: show.poster,
+                        backdrop: show.backdrop,
+                        trailerUrl: show.trailerUrl,
                         description: show.plot_summary,
                         year: show.year,
                         rate: show.rate,
@@ -1047,47 +1070,32 @@ function HomeClient() {
                         id: show.id,
                         title: show.title,
                         poster: show.poster,
+                        backdrop: show.backdrop,
+                        trailerUrl: show.trailerUrl,
                         description: show.plot_summary,
                         year: show.year,
                         rate: show.rate,
                         douban_id: Number(show.id),
                         type: 'variety',
                       })),
-                      // 短剧（非豆瓣）
-                      ...hotShortDramas.slice(0, 2).map((drama) => ({
-                        id: drama.id,
-                        title: drama.name,
-                        poster: drama.cover,
-                        description: drama.description,
-                        year: '',
-                        rate: drama.score ? drama.score.toString() : '',
-                        type: 'shortdrama',
-                      })),
-                      // 番剧（非豆瓣，来自 bangumi）
-                      ...(bangumiCalendarData.length > 0
-                        ? (() => {
-                            const today = new Date();
-                            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                            const currentWeekday = weekdays[today.getDay()];
-                            const todayAnimes = bangumiCalendarData.find(
-                              (item) => item.weekday.en === currentWeekday
-                            )?.items || [];
-                            return todayAnimes.slice(0, 1).map((anime) => ({
-                              id: anime.id,
-                              title: anime.name_cn || anime.name,
-                              poster: anime.images?.large || anime.images?.common || anime.images?.medium || '/placeholder-poster.jpg',
-                              description: anime.summary,
-                              year: anime.air_date?.split('-')?.[0] || '',
-                              rate: anime.rating?.score?.toFixed(1) || '',
-                              douban_id: anime.id,
-                              type: 'anime',
-                            }));
-                          })()
-                        : [])
+                      // 豆瓣动漫
+                      ...hotAnime.slice(0, 1).map((anime) => ({
+                        id: anime.id,
+                        title: anime.title,
+                        poster: anime.poster,
+                        backdrop: anime.backdrop,
+                        trailerUrl: anime.trailerUrl,
+                        description: anime.plot_summary,
+                        year: anime.year,
+                        rate: anime.rate,
+                        douban_id: Number(anime.id),
+                        type: 'anime',
+                      }))
                     ]}
-                    autoPlayInterval={5000}
+                    autoPlayInterval={8000}
                     showControls={true}
                     showIndicators={true}
+                    enableVideo={true}
                   />
                 </section>
               )}
@@ -1112,10 +1120,44 @@ function HomeClient() {
                       <ChevronRight className='w-4 h-4 ml-1' />
                     </Link>
                   </div>
-                  <ScrollableRow>
-                    {upcomingReleases.map((release, index) => {
+
+                  {/* Tab 切换 */}
+                  <div className='mb-4 flex gap-2'>
+                    {[
+                      { key: 'all', label: '全部', count: upcomingReleases.length },
+                      { key: 'movie', label: '电影', count: upcomingReleases.filter(r => r.type === 'movie').length },
+                      { key: 'tv', label: '电视剧', count: upcomingReleases.filter(r => r.type === 'tv').length },
+                    ].map(({ key, label, count }) => (
+                      <button
+                        key={key}
+                        onClick={() => setUpcomingFilter(key as 'all' | 'movie' | 'tv')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          upcomingFilter === key
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {label}
+                        {count > 0 && (
+                          <span className={`ml-1.5 text-xs ${
+                            upcomingFilter === key
+                              ? 'text-white/80'
+                              : 'text-gray-500 dark:text-gray-400'
+                          }`}>
+                            ({count})
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <ScrollableRow enableVirtualization={true}>
+                    {upcomingReleases
+                      .filter(release => upcomingFilter === 'all' || release.type === upcomingFilter)
+                      .map((release, index) => {
                       // 计算距离上映还有几天
                       const now = new Date();
+                      now.setHours(0, 0, 0, 0); // 归零时间，只比较日期
                       const releaseDate = new Date(release.releaseDate);
                       const daysDiff = Math.ceil((releaseDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -1167,7 +1209,7 @@ function HomeClient() {
                     <ChevronRight className='w-4 h-4 ml-1' />
                   </Link>
                 </div>
-                <ScrollableRow>
+                <ScrollableRow enableVirtualization={true}>
                   {loading
                     ? // 加载状态显示灰色占位数据
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1208,7 +1250,7 @@ function HomeClient() {
                     <ChevronRight className='w-4 h-4 ml-1' />
                   </Link>
                 </div>
-                <ScrollableRow>
+                <ScrollableRow enableVirtualization={true}>
                   {loading
                     ? // 加载状态显示灰色占位数据
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1249,7 +1291,7 @@ function HomeClient() {
                     <ChevronRight className='w-4 h-4 ml-1' />
                   </Link>
                 </div>
-                <ScrollableRow>
+                <ScrollableRow enableVirtualization={true}>
                   {loading
                     ? // 加载状态显示灰色占位数据
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1318,7 +1360,7 @@ function HomeClient() {
                     <ChevronRight className='w-4 h-4 ml-1' />
                   </Link>
                 </div>
-                <ScrollableRow>
+                <ScrollableRow enableVirtualization={true}>
                   {loading
                     ? // 加载状态显示灰色占位数据
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1359,7 +1401,7 @@ function HomeClient() {
                     <ChevronRight className='w-4 h-4 ml-1' />
                   </Link>
                 </div>
-                <ScrollableRow>
+                <ScrollableRow enableVirtualization={true}>
                   {loading
                     ? // 加载状态显示灰色占位数据
                     Array.from({ length: 8 }).map((_, index) => (
@@ -1437,19 +1479,13 @@ function HomeClient() {
             </div>
             <button
               onClick={() => handleCloseAnnouncement(announcement)}
-              className='w-full rounded-lg bg-gradient-to-r from-green-600 to-green-700 px-4 py-3 text-white font-medium shadow-md hover:shadow-lg hover:from-green-700 hover:to-green-800 dark:from-green-600 dark:to-green-700 dark:hover:from-green-700 dark:hover:to-green-800 transition-all duration-300 transform hover:-translate-y-0.5'
+              className='w-full rounded-lg bg-linear-to-r from-green-600 to-green-700 px-4 py-3 text-white font-medium shadow-md hover:shadow-lg hover:from-green-700 hover:to-green-800 dark:from-green-600 dark:to-green-700 dark:hover:from-green-700 dark:hover:to-green-800 transition-all duration-300 transform hover:-translate-y-0.5'
             >
               我知道了
             </button>
           </div>
         </div>
       )}
-
-      {/* AI推荐模态框 */}
-      <AIRecommendModal
-        isOpen={showAIRecommendModal}
-        onClose={() => setShowAIRecommendModal(false)}
-      />
     </PageLayout>
   );
 }
