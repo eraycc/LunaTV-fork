@@ -9,9 +9,9 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useLongPress } from '@/hooks/useLongPress';
 import { useToggleFavoriteMutation } from '@/hooks/useFavoritesMutations';
+import { useIsFavoritedQuery } from '@/hooks/useFavoritesQuery';
 import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 import {
-  isFavorited,
   saveFavorite,
   deleteFavorite,
   generateStorageKey,
@@ -68,20 +68,18 @@ function ShortDramaCard({
   const source = 'shortdrama';
   const id = drama.id.toString(); // 转换为字符串
 
-  // 检查收藏状态
+  // 🚀 TanStack Query - 获取收藏状态
+  const { data: favoritedStatus } = useIsFavoritedQuery(source, id);
+
+  // 同步 Query 结果到本地 state
   useEffect(() => {
-    const fetchFavoriteStatus = async () => {
-      try {
-        const fav = await isFavorited(source, id);
-        setFavorited(fav);
-      } catch (err) {
-        console.error('检查收藏状态失败:', err);
-      }
-    };
+    if (favoritedStatus !== undefined) {
+      setFavorited(favoritedStatus);
+    }
+  }, [favoritedStatus]);
 
-    fetchFavoriteStatus();
-
-    // 监听收藏状态更新事件
+  // 监听收藏状态更新事件
+  useEffect(() => {
     const storageKey = generateStorageKey(source, id);
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
@@ -101,38 +99,9 @@ function ShortDramaCard({
       return;
     }
 
-    if (isAIRecommendFeatureDisabled()) {
-      setAiEnabledLocal(false);
-      setAiCheckCompleteLocal(true);
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const response = await fetch('/api/ai-recommend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: 'ping' }],
-          }),
-        });
-        if (!cancelled) {
-          setAiEnabledLocal(response.status !== 403);
-          setAiCheckCompleteLocal(true);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setAiEnabledLocal(false);
-          setAiCheckCompleteLocal(true);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    const disabled = isAIRecommendFeatureDisabled();
+    setAiEnabledLocal(!disabled);
+    setAiCheckCompleteLocal(true);
   }, [aiEnabledProp]);
 
   // 获取真实集数（优先使用备用API）
@@ -153,24 +122,27 @@ function ShortDramaCard({
       }
 
       try {
+        // 🔥 暂时注释掉备用API调用，避免后台日志报错（未配置备用API）
         // 优先尝试使用备用API（通过剧名获取集数，更快更可靠）
-        const episodeCountResponse = await fetch(
-          `/api/shortdrama/episode-count?name=${encodeURIComponent(drama.name)}`
-        );
+        // const episodeCountResponse = await fetch(
+        //   `/api/shortdrama/episode-count?name=${encodeURIComponent(drama.name)}`
+        // );
+        //
+        // if (episodeCountResponse.ok) {
+        //   const episodeCountData = await episodeCountResponse.json();
+        //   if (episodeCountData.episodeCount > 1) {
+        //     setRealEpisodeCount(episodeCountData.episodeCount);
+        //     setShowEpisodeCount(true);
+        //     // 使用统一缓存系统缓存结果
+        //     await setCache(cacheKey, episodeCountData.episodeCount, SHORTDRAMA_CACHE_EXPIRE.episodes);
+        //     return; // 成功获取，直接返回
+        //   }
+        // }
+        //
+        // // 备用API失败，fallback到主API解析方式
+        // console.log('备用API获取集数失败，尝试主API...');
 
-        if (episodeCountResponse.ok) {
-          const episodeCountData = await episodeCountResponse.json();
-          if (episodeCountData.episodeCount > 1) {
-            setRealEpisodeCount(episodeCountData.episodeCount);
-            setShowEpisodeCount(true);
-            // 使用统一缓存系统缓存结果
-            await setCache(cacheKey, episodeCountData.episodeCount, SHORTDRAMA_CACHE_EXPIRE.episodes);
-            return; // 成功获取，直接返回
-          }
-        }
-
-        // 备用API失败，fallback到主API解析方式
-        console.log('备用API获取集数失败，尝试主API...');
+        // 直接使用主API解析方式获取集数
 
         // 先尝试第1集（episode=0）
         let response = await fetch(`/api/shortdrama/parse?id=${drama.id}&episode=0&name=${encodeURIComponent(drama.name)}`);

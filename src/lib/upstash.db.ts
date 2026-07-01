@@ -11,6 +11,7 @@ import {
   IStorage,
   PlayRecord,
   PlayStatsResult,
+  Reminder,
   UserPlayStat,
 } from './types';
 
@@ -158,6 +159,48 @@ export class UpstashRedisStorage implements IStorage {
     await withRetry(() => this.client.del(this.favHashKey(userName)));
   }
 
+  // ---------- 提醒 ----------
+  private reminderHashKey(user: string) {
+    return `u:${user}:reminder`; // 一个用户的所有提醒存在一个 Hash 中
+  }
+
+  async getReminder(userName: string, key: string): Promise<Reminder | null> {
+    const val = await withRetry(() =>
+      this.client.hget(this.reminderHashKey(userName), key)
+    );
+    return val ? (val as Reminder) : null;
+  }
+
+  async setReminder(
+    userName: string,
+    key: string,
+    reminder: Reminder
+  ): Promise<void> {
+    await withRetry(() =>
+      this.client.hset(this.reminderHashKey(userName), { [key]: reminder })
+    );
+  }
+
+  async getAllReminders(userName: string): Promise<Record<string, Reminder>> {
+    const all = await withRetry(() =>
+      this.client.hgetall(this.reminderHashKey(userName))
+    );
+    if (!all || Object.keys(all).length === 0) return {};
+    const result: Record<string, Reminder> = {};
+    for (const [field, value] of Object.entries(all)) {
+      if (value) result[field] = value as Reminder;
+    }
+    return result;
+  }
+
+  async deleteReminder(userName: string, key: string): Promise<void> {
+    await withRetry(() => this.client.hdel(this.reminderHashKey(userName), key));
+  }
+
+  async deleteAllReminders(userName: string): Promise<void> {
+    await withRetry(() => this.client.del(this.reminderHashKey(userName)));
+  }
+
   // ---------- 批量写入（利用 Hash，hset 支持多字段，只算1条命令）----------
   async setPlayRecordsBatch(
     userName: string,
@@ -248,6 +291,7 @@ export class UpstashRedisStorage implements IStorage {
     // 直接删除 Hash key（无需 KEYS 扫描）
     await withRetry(() => this.client.del(this.prHashKey(userName)));
     await withRetry(() => this.client.del(this.favHashKey(userName)));
+    await withRetry(() => this.client.del(this.reminderHashKey(userName)));
     await withRetry(() => this.client.del(this.skipHashKey(userName)));
     await withRetry(() => this.client.del(this.episodeSkipHashKey(userName)));
 
@@ -1010,12 +1054,11 @@ export class UpstashRedisStorage implements IStorage {
 
       if (playRecords.length === 0) {
         // 即使没有播放记录，也要获取登入统计
-        let loginStats = {
-          loginCount: 0,
-          firstLoginTime: 0,
-          lastLoginTime: 0,
-          lastLoginDate: 0
-        };
+        let loginStats: {
+          loginCount: number; firstLoginTime: number; lastLoginTime: number; lastLoginDate: number;
+          lastLoginIp?: string; lastLoginLocation?: string; lastLoginDevice?: string;
+          lastLoginBrowser?: string; lastLoginOs?: string;
+        } = { loginCount: 0, firstLoginTime: 0, lastLoginTime: 0, lastLoginDate: 0 };
 
         try {
           const loginStatsKey = `user_login_stats:${userName}`;
@@ -1024,6 +1067,11 @@ export class UpstashRedisStorage implements IStorage {
             firstLoginTime?: number;
             lastLoginTime?: number;
             lastLoginDate?: number;
+            lastLoginIp?: string;
+            lastLoginLocation?: string;
+            lastLoginDevice?: string;
+            lastLoginBrowser?: string;
+            lastLoginOs?: string;
           }>(loginStatsKey);
           console.log(`[Upstash-NoRecords] 用户 ${userName} 登入统计查询:`, {
             key: loginStatsKey,
@@ -1032,12 +1080,16 @@ export class UpstashRedisStorage implements IStorage {
           });
 
           if (storedLoginStats) {
-            // Upstash Redis返回的是对象，不需要JSON.parse
             loginStats = {
               loginCount: storedLoginStats.loginCount || 0,
               firstLoginTime: storedLoginStats.firstLoginTime || 0,
               lastLoginTime: storedLoginStats.lastLoginTime || 0,
-              lastLoginDate: storedLoginStats.lastLoginDate || storedLoginStats.lastLoginTime || 0
+              lastLoginDate: storedLoginStats.lastLoginDate || storedLoginStats.lastLoginTime || 0,
+              lastLoginIp: storedLoginStats.lastLoginIp,
+              lastLoginLocation: storedLoginStats.lastLoginLocation,
+              lastLoginDevice: storedLoginStats.lastLoginDevice,
+              lastLoginBrowser: storedLoginStats.lastLoginBrowser,
+              lastLoginOs: storedLoginStats.lastLoginOs,
             };
             console.log(`[Upstash-NoRecords] 解析后的登入统计:`, loginStats);
           } else {
@@ -1060,10 +1112,15 @@ export class UpstashRedisStorage implements IStorage {
           firstWatchDate: Date.now(),
           lastUpdateTime: Date.now(),
           // 登入统计字段
-          loginCount: loginStats.loginCount,
-          firstLoginTime: loginStats.firstLoginTime,
-          lastLoginTime: loginStats.lastLoginTime,
-          lastLoginDate: loginStats.lastLoginDate
+          loginCount: (loginStats as any).loginCount,
+          firstLoginTime: (loginStats as any).firstLoginTime,
+          lastLoginTime: (loginStats as any).lastLoginTime,
+          lastLoginDate: (loginStats as any).lastLoginDate,
+          lastLoginIp: (loginStats as any).lastLoginIp,
+          lastLoginLocation: (loginStats as any).lastLoginLocation,
+          lastLoginDevice: (loginStats as any).lastLoginDevice,
+          lastLoginBrowser: (loginStats as any).lastLoginBrowser,
+          lastLoginOs: (loginStats as any).lastLoginOs,
         };
       }
 
@@ -1103,12 +1160,11 @@ export class UpstashRedisStorage implements IStorage {
       }
 
       // 获取登入统计数据
-      let loginStats = {
-        loginCount: 0,
-        firstLoginTime: 0,
-        lastLoginTime: 0,
-        lastLoginDate: 0
-      };
+      let loginStats: {
+        loginCount: number; firstLoginTime: number; lastLoginTime: number; lastLoginDate: number;
+        lastLoginIp?: string; lastLoginLocation?: string; lastLoginDevice?: string;
+        lastLoginBrowser?: string; lastLoginOs?: string;
+      } = { loginCount: 0, firstLoginTime: 0, lastLoginTime: 0, lastLoginDate: 0 };
 
       try {
         const loginStatsKey = `user_login_stats:${userName}`;
@@ -1117,6 +1173,11 @@ export class UpstashRedisStorage implements IStorage {
           firstLoginTime?: number;
           lastLoginTime?: number;
           lastLoginDate?: number;
+          lastLoginIp?: string;
+          lastLoginLocation?: string;
+          lastLoginDevice?: string;
+          lastLoginBrowser?: string;
+          lastLoginOs?: string;
         }>(loginStatsKey);
         console.log(`[Upstash] 用户 ${userName} 登入统计查询:`, {
           key: loginStatsKey,
@@ -1125,12 +1186,16 @@ export class UpstashRedisStorage implements IStorage {
         });
 
         if (storedLoginStats) {
-          // Upstash Redis返回的是对象，不需要JSON.parse
           loginStats = {
             loginCount: storedLoginStats.loginCount || 0,
             firstLoginTime: storedLoginStats.firstLoginTime || 0,
             lastLoginTime: storedLoginStats.lastLoginTime || 0,
-            lastLoginDate: storedLoginStats.lastLoginDate || storedLoginStats.lastLoginTime || 0
+            lastLoginDate: storedLoginStats.lastLoginDate || storedLoginStats.lastLoginTime || 0,
+            lastLoginIp: storedLoginStats.lastLoginIp,
+            lastLoginLocation: storedLoginStats.lastLoginLocation,
+            lastLoginDevice: storedLoginStats.lastLoginDevice,
+            lastLoginBrowser: storedLoginStats.lastLoginBrowser,
+            lastLoginOs: storedLoginStats.lastLoginOs,
           };
           console.log(`[Upstash] 解析后的登入统计:`, loginStats);
         } else {
@@ -1153,10 +1218,15 @@ export class UpstashRedisStorage implements IStorage {
         firstWatchDate,
         lastUpdateTime: Date.now(),
         // 登入统计字段
-        loginCount: loginStats.loginCount,
-        firstLoginTime: loginStats.firstLoginTime,
-        lastLoginTime: loginStats.lastLoginTime,
-        lastLoginDate: loginStats.lastLoginDate
+        loginCount: (loginStats as any).loginCount,
+        firstLoginTime: (loginStats as any).firstLoginTime,
+        lastLoginTime: (loginStats as any).lastLoginTime,
+        lastLoginDate: (loginStats as any).lastLoginDate,
+        lastLoginIp: (loginStats as any).lastLoginIp,
+        lastLoginLocation: (loginStats as any).lastLoginLocation,
+        lastLoginDevice: (loginStats as any).lastLoginDevice,
+        lastLoginBrowser: (loginStats as any).lastLoginBrowser,
+        lastLoginOs: (loginStats as any).lastLoginOs,
       };
     } catch (error) {
       console.error(`获取用户 ${userName} 统计失败:`, error);
@@ -1271,17 +1341,22 @@ export class UpstashRedisStorage implements IStorage {
   async updateUserLoginStats(
     userName: string,
     loginTime: number,
-    isFirstLogin?: boolean
+    isFirstLogin?: boolean,
+    loginMeta?: { ip?: string; location?: string; device?: string; browser?: string; os?: string }
   ): Promise<void> {
     try {
       const loginStatsKey = `user_login_stats:${userName}`;
 
-      // 获取当前登入统计数据
       const currentStats = await this.client.get<{
         loginCount?: number;
         firstLoginTime?: number | null;
         lastLoginTime?: number | null;
         lastLoginDate?: number | null;
+        lastLoginIp?: string;
+        lastLoginLocation?: string;
+        lastLoginDevice?: string;
+        lastLoginBrowser?: string;
+        lastLoginOs?: string;
       }>(loginStatsKey);
       const loginStats = currentStats || {
         loginCount: 0,
@@ -1290,17 +1365,22 @@ export class UpstashRedisStorage implements IStorage {
         lastLoginDate: null
       };
 
-      // 更新统计数据
       loginStats.loginCount = (loginStats.loginCount || 0) + 1;
       loginStats.lastLoginTime = loginTime;
-      loginStats.lastLoginDate = loginTime; // 保持兼容性
+      loginStats.lastLoginDate = loginTime;
 
-      // 如果是首次登入，记录首次登入时间
       if (isFirstLogin || !loginStats.firstLoginTime) {
         loginStats.firstLoginTime = loginTime;
       }
 
-      // 保存更新后的统计数据 - Upstash Redis 会自动序列化对象，不需要 JSON.stringify
+      if (loginMeta) {
+        if (loginMeta.ip) loginStats.lastLoginIp = loginMeta.ip;
+        if (loginMeta.location) loginStats.lastLoginLocation = loginMeta.location;
+        if (loginMeta.device) loginStats.lastLoginDevice = loginMeta.device;
+        if (loginMeta.browser) loginStats.lastLoginBrowser = loginMeta.browser;
+        if (loginMeta.os) loginStats.lastLoginOs = loginMeta.os;
+      }
+
       await this.client.set(loginStatsKey, loginStats);
 
       console.log(`用户 ${userName} 登入统计已更新:`, loginStats);
@@ -1340,6 +1420,70 @@ export class UpstashRedisStorage implements IStorage {
       console.log(`用户 ${userName} Emby 配置已删除`);
     } catch (error) {
       console.error(`删除用户 ${userName} Emby 配置失败:`, error);
+      throw error;
+    }
+  }
+
+  // 崩溃日志相关
+  async saveCrashLog(crashLog: any): Promise<void> {
+    try {
+      const key = `crash-log:${crashLog.timestamp}`;
+      // 保存崩溃日志，设置 7 天 TTL (604800 秒)
+      await withRetry(() => this.client.set(key, JSON.stringify(crashLog), { ex: 604800 }));
+      console.log(`崩溃日志已保存: ${crashLog.timestamp}`);
+    } catch (error) {
+      console.error('保存崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async getCrashLogs(limit: number = 50): Promise<any[]> {
+    try {
+      // 获取所有崩溃日志的 key
+      const keys = await withRetry(() => this.client.keys('crash-log:*'));
+
+      if (keys.length === 0) {
+        return [];
+      }
+
+      // 批量获取崩溃日志
+      const logs = await withRetry(() => this.client.mget(...keys));
+
+      // 解析并排序（按时间戳降序）
+      const parsedLogs = logs
+        .filter((log): log is string => log !== null)
+        .map((log) => JSON.parse(log))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, limit);
+
+      return parsedLogs;
+    } catch (error) {
+      console.error('获取崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async deleteCrashLog(timestamp: string): Promise<void> {
+    try {
+      const key = `crash-log:${timestamp}`;
+      await withRetry(() => this.client.del(key));
+      console.log(`崩溃日志已删除: ${timestamp}`);
+    } catch (error) {
+      console.error('删除崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async clearCrashLogs(): Promise<void> {
+    try {
+      const keys = await withRetry(() => this.client.keys('crash-log:*'));
+
+      if (keys.length > 0) {
+        await withRetry(() => this.client.del(...keys));
+        console.log(`已清除 ${keys.length} 条崩溃日志`);
+      }
+    } catch (error) {
+      console.error('清除崩溃日志失败:', error);
       throw error;
     }
   }

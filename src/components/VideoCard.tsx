@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,react-hooks/exhaustive-deps,@typescript-eslint/no-empty-function */
 
-import { ExternalLink, Heart, Link, PlayCircleIcon, Radio, Star, Trash2, Sparkles } from 'lucide-react';
+import { ExternalLink, Heart, Link, PlayCircleIcon, Radio, Star, Trash2, Sparkles, Bell, BellRing } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
@@ -17,14 +17,18 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useLongPress } from '@/hooks/useLongPress';
 import { useToggleFavoriteMutation } from '@/hooks/useFavoritesMutations';
+import { useToggleReminderMutation } from '@/hooks/useRemindersMutations';
 import { useDeletePlayRecordMutation } from '@/hooks/usePlayRecordsMutations';
+import { useIsFavoritedQuery } from '@/hooks/useFavoritesQuery';
+import { useIsRemindedQuery } from '@/hooks/useRemindersQuery';
 import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 import {
   deleteFavorite,
   deletePlayRecord,
+  deleteReminder,
   generateStorageKey,
-  isFavorited,
   saveFavorite,
+  saveReminder,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { processImageUrl, isSeriesCompleted } from '@/lib/utils';
@@ -44,7 +48,7 @@ export interface VideoCardProps {
   source_names?: string[];
   progress?: number;
   year?: string;
-  from: 'playrecord' | 'favorite' | 'search' | 'douban';
+  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'reminder';
   currentEpisode?: number;
   douban_id?: number;
   onDelete?: () => void;
@@ -103,9 +107,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const router = useRouter();
   const queryClient = useQueryClient();
   const toggleFavoriteMutation = useToggleFavoriteMutation();
+  const toggleReminderMutation = useToggleReminderMutation();
   const deletePlayRecordMutation = useDeletePlayRecordMutation();
 
   const [favorited, setFavorited] = useState(false);
+  const [reminded, setReminded] = useState(false); // 添加提醒状态
   const [isLoading, setIsLoading] = useState(() =>
     loadedImageUrls.has(processImageUrl(poster))
   );
@@ -115,6 +121,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [searchFavorited, setSearchFavorited] = useState<boolean | null>(null); // 搜索结果的收藏状态
   const [showAIChat, setShowAIChat] = useState(false); // AI问片弹窗
+  const [isNavigating, setIsNavigating] = useState(false); // 导航加载状态
 
   // AI功能状态：优先使用父组件传递的值，否则自己检测
   const [aiEnabledLocal, setAiEnabledLocal] = useState(false);
@@ -132,6 +139,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const [optimisticSearchFavorited, setOptimisticSearchFavorited] = useOptimistic(
     searchFavorited,
     (_state, newValue: boolean | null) => newValue
+  );
+  // 🚀 React 19 useOptimistic - 乐观更新提醒状态
+  const [optimisticReminded, setOptimisticReminded] = useOptimistic(
+    reminded,
+    (_state, newValue: boolean) => newValue
   );
 
   // 可外部修改的可控字段
@@ -194,28 +206,46 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
            (isAggregate && dynamicSourceNames && dynamicSourceNames.length > 0);
   }, [remarks, hasReleaseTag, isAggregate, dynamicSourceNames]);
 
-  // 获取收藏状态
+  // 🔥 判断是否应该显示提醒按钮（即将上映或新上映）
+  const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
+  const shouldShowBell = isUpcoming || isNewRelease;
+
+  // 🚀 TanStack Query - 获取收藏/提醒状态
+  const { data: favoritedStatus } = useIsFavoritedQuery(
+    actualSource || '',
+    actualId || '',
+    { enabled: !!actualSource && !!actualId && !shouldShowBell }
+  );
+  const { data: remindedStatus } = useIsRemindedQuery(
+    actualSource || '',
+    actualId || '',
+    { enabled: !!actualSource && !!actualId && shouldShowBell }
+  );
+
+  // 同步 Query 结果到本地 state
+  useEffect(() => {
+    if (!shouldShowBell && favoritedStatus !== undefined) {
+      if (from === 'search') {
+        setSearchFavorited(favoritedStatus);
+      } else {
+        setFavorited(favoritedStatus);
+      }
+    }
+  }, [favoritedStatus, shouldShowBell, from]);
+
+  useEffect(() => {
+    if (shouldShowBell && remindedStatus !== undefined) {
+      setReminded(remindedStatus);
+    }
+  }, [remindedStatus, shouldShowBell]);
+
+  // 监听状态更新事件
   useEffect(() => {
     if (!actualSource || !actualId) return;
 
-    const fetchFavoriteStatus = async () => {
-      try {
-        const fav = await isFavorited(actualSource, actualId);
-        if (from === 'search') {
-          setSearchFavorited(fav);
-        } else {
-          setFavorited(fav);
-        }
-      } catch (err) {
-        throw new Error('检查收藏状态失败');
-      }
-    };
-
-    fetchFavoriteStatus();
-
-    // 监听收藏状态更新事件
     const storageKey = generateStorageKey(actualSource, actualId);
-    const unsubscribe = subscribeToDataUpdates(
+
+    const unsubscribeFavorites = subscribeToDataUpdates(
       'favoritesUpdated',
       (newFavorites: Record<string, any>) => {
         const isNowFavorited = !!newFavorites[storageKey];
@@ -227,8 +257,19 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       }
     );
 
-    return unsubscribe;
-  }, [from, actualSource, actualId, isUpcoming]);
+    const unsubscribeReminders = subscribeToDataUpdates(
+      'remindersUpdated',
+      (newReminders: Record<string, any>) => {
+        const isNowReminded = !!newReminders[storageKey];
+        setReminded(isNowReminded);
+      }
+    );
+
+    return () => {
+      unsubscribeFavorites();
+      unsubscribeReminders();
+    };
+  }, [from, actualSource, actualId, isUpcoming, remarks]);
 
   // 检查AI功能是否启用 - 只在没有父组件传递时才执行
   useEffect(() => {
@@ -237,38 +278,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       return;
     }
 
-    if (isAIRecommendFeatureDisabled()) {
-      setAiEnabledLocal(false);
-      setAiCheckCompleteLocal(true);
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const response = await fetch('/api/ai-recommend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: 'ping' }],
-          }),
-        });
-        if (!cancelled) {
-          setAiEnabledLocal(response.status !== 403);
-          setAiCheckCompleteLocal(true);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setAiEnabledLocal(false);
-          setAiCheckCompleteLocal(true);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    const disabled = isAIRecommendFeatureDisabled();
+    setAiEnabledLocal(!disabled);
+    setAiCheckCompleteLocal(true);
   }, [aiEnabledProp, aiCheckCompleteProp]); // 依赖父组件传递的props
 
   // 🚀 使用 TanStack Query useMutation 优化收藏功能
@@ -277,59 +289,100 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       e.preventDefault();
       e.stopPropagation();
 
-      // 所有豆瓣内容都允许收藏
+      // 所有豆瓣内容都允许收藏/提醒
       if (!actualSource || !actualId) return;
 
-      // 确定当前收藏状态
-      const currentFavorited = from === 'search' ? searchFavorited : favorited;
-      const newFavoritedState = !currentFavorited;
+      // 🔥 修复：检查是否是"新上映"的内容
+      const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
+      const shouldShowBell = isUpcoming || isNewRelease;
 
-      // 🎯 立即更新 UI（乐观更新）- 用户感知零延迟
-      if (from === 'search') {
-        setOptimisticSearchFavorited(newFavoritedState);
+      if (shouldShowBell) {
+        // ========== 即将上映或新上映 → 操作提醒 ==========
+        const currentReminded = reminded;
+        const newRemindedState = !currentReminded;
+
+        // 🎯 立即更新 UI（乐观更新）
+        setOptimisticReminded(newRemindedState);
+
+        // 🔄 使用 reminder mutation
+        toggleReminderMutation.mutate(
+          {
+            source: actualSource,
+            id: actualId,
+            isReminded: currentReminded || false,
+            reminder: {
+              title: actualTitle,
+              source_name: source_name || '即将上映',
+              year: actualYear || '',
+              cover: actualPoster,
+              total_episodes: actualEpisodes ?? 1,
+              save_time: Date.now(),
+              search_title: actualQuery || actualTitle,
+              type: type || undefined,
+              releaseDate: releaseDate || '', // 提醒必须有 releaseDate
+              remarks: remarks,
+            },
+          },
+          {
+            onSuccess: () => {
+              setReminded(newRemindedState);
+            },
+            onError: (err) => {
+              console.error('切换提醒状态失败:', err);
+              setOptimisticReminded(currentReminded);
+            },
+          }
+        );
       } else {
-        setOptimisticFavorited(newFavoritedState);
-      }
+        // ========== 已上映 → 操作收藏 ==========
+        const currentFavorited = from === 'search' ? searchFavorited : favorited;
+        const newFavoritedState = !currentFavorited;
 
-      // 🔄 使用 mutation 执行数据库操作
-      toggleFavoriteMutation.mutate(
-        {
-          source: actualSource,
-          id: actualId,
-          isFavorited: currentFavorited || false,
-          favorite: {
-            title: actualTitle,
-            source_name: source_name || '即将上映',
-            year: actualYear || '',
-            cover: actualPoster,
-            total_episodes: actualEpisodes ?? 1,
-            save_time: Date.now(),
-            search_title: actualQuery || actualTitle,
-            type: type || undefined,
-            releaseDate: releaseDate,
-            remarks: remarks,
-          },
-        },
-        {
-          onSuccess: () => {
-            // 操作成功后更新真实状态
-            if (from === 'search') {
-              setSearchFavorited(newFavoritedState);
-            } else {
-              setFavorited(newFavoritedState);
-            }
-          },
-          onError: (err) => {
-            // ⚠️ 如果操作失败，恢复原状态
-            console.error('切换收藏状态失败:', err);
-            if (from === 'search') {
-              setOptimisticSearchFavorited(currentFavorited);
-            } else {
-              setOptimisticFavorited(currentFavorited || false);
-            }
-          },
+        // 🎯 立即更新 UI（乐观更新）
+        if (from === 'search') {
+          setOptimisticSearchFavorited(newFavoritedState);
+        } else {
+          setOptimisticFavorited(newFavoritedState);
         }
-      );
+
+        // 🔄 使用 favorite mutation
+        toggleFavoriteMutation.mutate(
+          {
+            source: actualSource,
+            id: actualId,
+            isFavorited: currentFavorited || false,
+            favorite: {
+              title: actualTitle,
+              source_name: source_name || '即将上映',
+              year: actualYear || '',
+              cover: actualPoster,
+              total_episodes: actualEpisodes ?? 1,
+              save_time: Date.now(),
+              search_title: actualQuery || actualTitle,
+              type: type || undefined,
+              releaseDate: releaseDate,
+              remarks: remarks,
+            },
+          },
+          {
+            onSuccess: () => {
+              if (from === 'search') {
+                setSearchFavorited(newFavoritedState);
+              } else {
+                setFavorited(newFavoritedState);
+              }
+            },
+            onError: (err) => {
+              console.error('切换收藏状态失败:', err);
+              if (from === 'search') {
+                setOptimisticSearchFavorited(currentFavorited);
+              } else {
+                setOptimisticFavorited(currentFavorited || false);
+              }
+            },
+          }
+        );
+      }
     },
     [
       from,
@@ -343,10 +396,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       actualEpisodes,
       actualQuery,
       favorited,
+      reminded,
       searchFavorited,
       setOptimisticFavorited,
+      setOptimisticReminded,
       setOptimisticSearchFavorited,
       toggleFavoriteMutation,
+      toggleReminderMutation,
       type,
       releaseDate,
       remarks,
@@ -374,7 +430,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     [from, actualSource, actualId, onDelete, deletePlayRecordMutation]
   );
 
-  // 🚀 数据预取 - 在 hover 时预取收藏数据
+  // 🚀 数据预取 - 在 hover 时预取收藏数据和预加载路由
   const handlePrefetch = useCallback(() => {
     if (!actualSource || !actualId) return;
 
@@ -388,13 +444,33 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       },
       staleTime: 10 * 1000, // 10秒内不重复预取
     });
-  }, [actualSource, actualId, queryClient]);
+
+    // 🔥 预加载播放页面路由 - 关键优化！
+    const doubanIdParam = actualDoubanId && actualDoubanId > 0 ? `&douban_id=${actualDoubanId}` : '';
+
+    if (origin === 'live' && actualSource && actualId) {
+      const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
+      router.prefetch(url);
+    } else if (actualSource === 'shortdrama' && actualId) {
+      const url = `/play?title=${encodeURIComponent(actualTitle.trim())}&shortdrama_id=${actualId}`;
+      router.prefetch(url);
+    } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release' || actualSource === 'douban' || actualSource === 'bangumi') {
+      const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''}${doubanIdParam}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
+      router.prefetch(url);
+    } else if (actualSource && actualId) {
+      const url = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(actualTitle)}${actualYear ? `&year=${actualYear}` : ''}${doubanIdParam}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
+      router.prefetch(url);
+    }
+  }, [actualSource, actualId, queryClient, router, origin, actualTitle, actualYear, actualDoubanId, actualSearchType, isAggregate, actualQuery, from]);
 
   const handleClick = useCallback(() => {
     // 如果是即将上映的内容，不执行跳转，显示提示
     if (isUpcoming) {
       return;
     }
+
+    // 🔥 立即显示加载状态，提供即时反馈
+    setIsNavigating(true);
 
     // 构建豆瓣ID参数
     const doubanIdParam = actualDoubanId && actualDoubanId > 0 ? `&douban_id=${actualDoubanId}` : '';
@@ -473,30 +549,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     actualDoubanId,
   ]);
 
-  // 检查搜索结果的收藏状态
-  const checkSearchFavoriteStatus = useCallback(async () => {
-    if (from === 'search' && !isAggregate && actualSource && actualId && searchFavorited === null) {
-      try {
-        const fav = await isFavorited(actualSource, actualId);
-        setSearchFavorited(fav);
-      } catch (err) {
-        setSearchFavorited(false);
-      }
-    }
-  }, [from, isAggregate, actualSource, actualId, searchFavorited]);
-
   // 长按操作
   const handleLongPress = useCallback(() => {
     if (!showMobileActions) { // 防止重复触发
       // 立即显示菜单，避免等待数据加载导致动画卡顿
       setShowMobileActions(true);
 
-      // 异步检查收藏状态，不阻塞菜单显示
-      if (from === 'search' && !isAggregate && actualSource && actualId && searchFavorited === null) {
-        checkSearchFavoriteStatus();
-      }
+      // 收藏状态已由 useIsFavoritedQuery 自动处理
     }
-  }, [showMobileActions, from, isAggregate, actualSource, actualId, searchFavorited, checkSearchFavoriteStatus]);
+  }, [showMobileActions, from, isAggregate, actualSource, actualId, searchFavorited]);
 
   // 长按手势hook
   const longPressProps = useLongPress({
@@ -639,23 +700,47 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
     // 聚合源信息 - 直接在菜单中展示，不需要单独的操作项
 
-    // 收藏/取消收藏操作
+    // 收藏/取消收藏操作（或提醒操作）
     if (config.showHeart && actualSource && actualId) {
+      // 🔥 修复：检查是否是"新上映"的内容
+      const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
+      const shouldShowBell = isUpcoming || isNewRelease;
+
       // 🚀 使用乐观状态显示，提供即时UI反馈
-      const currentFavorited = from === 'search' ? optimisticSearchFavorited : optimisticFavorited;
+      const currentState = shouldShowBell
+        ? optimisticReminded // 即将上映或新上映 → 使用提醒状态
+        : (from === 'search' ? optimisticSearchFavorited : optimisticFavorited); // 已上映 → 使用收藏状态
 
       if (from === 'search') {
         // 搜索结果：根据加载状态显示不同的选项
-        if (searchFavorited !== null) {
-          // 已加载完成，显示实际的收藏状态
-          actions.push({
-            id: 'favorite',
-            label: currentFavorited ? '取消收藏' : '添加收藏',
-            icon: currentFavorited ? (
+        const isLoaded = shouldShowBell ? true : (searchFavorited !== null);
+
+        if (isLoaded) {
+          // 已加载完成，显示实际的状态
+          const favoriteIcon = shouldShowBell ? (
+            currentState ? (
+              <BellRing size={20} className="fill-orange-600 stroke-orange-600" />
+            ) : (
+              <Bell size={20} className="fill-transparent stroke-orange-500" />
+            )
+          ) : (
+            currentState ? (
               <Heart size={20} className="fill-red-600 stroke-red-600" />
             ) : (
               <Heart size={20} className="fill-transparent stroke-red-500" />
-            ),
+            )
+          );
+
+          const favoriteLabel = shouldShowBell ? (
+            currentState ? '取消想看' : '想看'
+          ) : (
+            currentState ? '取消收藏' : '添加收藏'
+          );
+
+          actions.push({
+            id: 'favorite',
+            label: favoriteLabel,
+            icon: favoriteIcon,
             onClick: () => {
               const mockEvent = {
                 preventDefault: () => { },
@@ -663,28 +748,47 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
               } as React.MouseEvent;
               handleToggleFavorite(mockEvent);
             },
-            color: currentFavorited ? ('danger' as const) : ('default' as const),
+            color: currentState ? ('danger' as const) : ('default' as const),
           });
         } else {
           // 正在加载中，显示占位项
+          const loadingIcon = shouldShowBell ? <Bell size={20} /> : <Heart size={20} />;
+          const loadingLabel = shouldShowBell ? '想看加载中...' : '收藏加载中...';
+
           actions.push({
             id: 'favorite-loading',
-            label: '收藏加载中...',
-            icon: <Heart size={20} />,
+            label: loadingLabel,
+            icon: loadingIcon,
             onClick: () => { }, // 加载中时不响应点击
             disabled: true,
           });
         }
       } else {
-        // 非搜索结果：直接显示收藏选项
-        actions.push({
-          id: 'favorite',
-          label: currentFavorited ? '取消收藏' : '添加收藏',
-          icon: currentFavorited ? (
+        // 非搜索结果：直接显示收藏/提醒选项
+        const favoriteIcon = shouldShowBell ? (
+          currentState ? (
+            <BellRing size={20} className="fill-orange-600 stroke-orange-600" />
+          ) : (
+            <Bell size={20} className="fill-transparent stroke-orange-500" />
+          )
+        ) : (
+          currentState ? (
             <Heart size={20} className="fill-red-600 stroke-red-600" />
           ) : (
             <Heart size={20} className="fill-transparent stroke-red-500" />
-          ),
+          )
+        );
+
+        const favoriteLabel = shouldShowBell ? (
+          currentState ? '取消想看' : '想看'
+        ) : (
+          currentState ? '取消收藏' : '添加收藏'
+        );
+
+        actions.push({
+          id: 'favorite',
+          label: favoriteLabel,
+          icon: favoriteIcon,
           onClick: () => {
             const mockEvent = {
               preventDefault: () => { },
@@ -692,7 +796,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             } as React.MouseEvent;
             handleToggleFavorite(mockEvent);
           },
-          color: currentFavorited ? ('danger' as const) : ('default' as const),
+          color: currentState ? ('danger' as const) : ('default' as const),
         });
       }
     }
@@ -792,10 +896,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           // 右键弹出操作菜单
           setShowMobileActions(true);
 
-          // 异步检查收藏状态，不阻塞菜单显示
-          if (from === 'search' && !isAggregate && actualSource && actualId && searchFavorited === null) {
-            checkSearchFavoriteStatus();
-          }
+          // 收藏状态已由 useIsFavoritedQuery 自动处理
 
           return false;
         }}
@@ -901,11 +1002,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             }}
           />
 
-          {/* 播放按钮 / 即将上映提示 */}
+          {/* 播放按钮 / 即将上映提示 / 加载状态 */}
           {config.showPlayButton && (
             <div
               data-button="true"
-              className='absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100 group-hover:scale-100'
+              className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                isNavigating ? 'opacity-100 scale-100' : 'opacity-0 delay-75 group-hover:opacity-100 group-hover:scale-100'
+              }`}
               style={{
                 WebkitUserSelect: 'none',
                 userSelect: 'none',
@@ -916,7 +1019,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                 return false;
               }}
             >
-              {isUpcoming ? (
+              {isNavigating ? (
+                // 🔥 加载状态 - 提供即时反馈
+                <div className='flex flex-col items-center gap-2 bg-black/60 backdrop-blur-md px-6 py-4 rounded-xl'>
+                  <div className='w-10 h-10 border-4 border-green-500/30 border-t-green-500 rounded-full animate-spin' />
+                  <span className='text-white font-bold text-sm whitespace-nowrap'>加载中...</span>
+                </div>
+              ) : isUpcoming ? (
                 // 即将上映 - 显示敬请期待
                 <div className='flex flex-col items-center gap-2 bg-black/60 backdrop-blur-md px-6 py-4 rounded-xl'>
                   <span className='text-3xl'>📅</span>
@@ -926,8 +1035,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                 // 正常内容 - 显示播放按钮
                 <PlayCircleIcon
                   size={50}
-                  strokeWidth={0.8}
-                  className='text-white fill-transparent transition-all duration-300 ease-out hover:fill-green-500 hover:scale-[1.1]'
+                  strokeWidth={1.5}
+                  className='text-white fill-transparent transition-all duration-300 ease-out hover:text-green-500 hover:scale-[1.15] drop-shadow-[0_0_8px_rgba(34,197,94,0.6)]'
                   style={{
                     WebkitUserSelect: 'none',
                     userSelect: 'none',
@@ -974,28 +1083,74 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                 />
               )}
               {config.showHeart && (
-                <Heart
-                  onClick={handleToggleFavorite}
-                  size={20}
-                  className={`transition-all duration-300 ease-out ${(from === 'search' ? optimisticSearchFavorited : optimisticFavorited)
-                    ? 'fill-red-600 stroke-red-600'
-                    : 'fill-transparent stroke-white hover:stroke-red-400'
-                    } hover:scale-[1.1]`}
-                  style={{
-                    WebkitUserSelect: 'none',
-                    userSelect: 'none',
-                    WebkitTouchCallout: 'none',
-                  } as React.CSSProperties}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    return false;
-                  }}
-                />
+                <>
+                  {(() => {
+                    // 🔥 修复：如果是"新上映"的内容（remarks包含"已上映"或"今日上映"），显示Bell图标
+                    const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
+                    const shouldShowBell = isUpcoming || isNewRelease;
+
+                    if (shouldShowBell) {
+                      // 即将上映或新上映：显示铃铛图标（使用 reminded 状态）
+                      return optimisticReminded ? (
+                        <BellRing
+                          onClick={handleToggleFavorite}
+                          size={20}
+                          className="fill-orange-600 stroke-orange-600 transition-all duration-300 ease-out hover:scale-[1.1]"
+                          style={{
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                          } as React.CSSProperties}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            return false;
+                          }}
+                        />
+                      ) : (
+                        <Bell
+                          onClick={handleToggleFavorite}
+                          size={20}
+                          className="fill-transparent stroke-white hover:stroke-orange-400 transition-all duration-300 ease-out hover:scale-[1.1]"
+                          style={{
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                          } as React.CSSProperties}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            return false;
+                          }}
+                        />
+                      );
+                    } else {
+                      // 已上映：显示爱心图标（使用 favorited 状态）
+                      return (
+                        <Heart
+                          onClick={handleToggleFavorite}
+                          size={20}
+                          className={`transition-all duration-300 ease-out ${(from === 'search' ? optimisticSearchFavorited : optimisticFavorited)
+                            ? 'fill-red-600 stroke-red-600'
+                            : 'fill-transparent stroke-white hover:stroke-red-400'
+                            } hover:scale-[1.1]`}
+                          style={{
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                          } as React.CSSProperties}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            return false;
+                          }}
+                        />
+                      );
+                    }
+                  })()}
+                </>
               )}
             </div>
           )}
 
-          {/* 收藏页面专用：固定显示的爱心按钮 */}
+          {/* 收藏页面专用：固定显示的爱心/铃铛按钮 */}
           {from === 'favorite' && config.showHeart && (
             <div
               className='absolute bottom-2 right-2 z-30'
@@ -1011,10 +1166,23 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                 return false;
               }}
             >
-              <Heart
-                size={16}
-                className='fill-red-500 stroke-red-500 transition-all duration-300 hover:scale-110 hover:fill-red-600 hover:stroke-red-600'
-              />
+              {(() => {
+                // 🔥 修复：检查是否是"新上映"的内容
+                const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
+                const shouldShowBell = isUpcoming || isNewRelease;
+
+                return shouldShowBell ? (
+                  <BellRing
+                    size={16}
+                    className='fill-orange-500 stroke-orange-500 transition-all duration-300 hover:scale-110 hover:fill-orange-600 hover:stroke-orange-600'
+                  />
+                ) : (
+                  <Heart
+                    size={16}
+                    className='fill-red-500 stroke-red-500 transition-all duration-300 hover:scale-110 hover:fill-red-600 hover:stroke-red-600'
+                  />
+                );
+              })()}
             </div>
           )}
 
@@ -1570,6 +1738,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         currentEpisode={currentEpisode}
         totalEpisodes={actualEpisodes}
         origin={origin}
+        doubanId={actualDoubanId}
+        videoTitle={actualTitle}
+        videoYear={actualYear}
+        isBangumi={isBangumi}
       />
 
       {/* AI问片弹窗 */}

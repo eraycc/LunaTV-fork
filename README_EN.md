@@ -13,7 +13,7 @@
   <img src="public/logo.png" alt="LunaTV Logo" width="120">
 </div>
 
-> 🎬 **LunaTV Enhanced Edition** is a comprehensive video streaming platform based on MoonTV with extensive enhancements. Features include **YouTube Integration**, **Cloud Drive Search**, **AI Recommendations**, **Short Drama**, **IPTV Live TV**, **Bangumi Anime**, **Watch Statistics**, **Danmaku System**, and 50+ major feature additions for the ultimate viewing experience.
+> 🎬 **LunaTV Enhanced Edition** is a comprehensive video streaming platform based on MoonTV with extensive enhancements. Features include **YouTube Integration**, **Cloud Drive Search**, **AI Recommendations**, **Short Drama**, **IPTV Live TV**, **Bangumi Anime**, **Watch Statistics**, **Danmaku System**, and 60+ major feature additions for the ultimate viewing experience.
 
 <div align="center">
 
@@ -21,11 +21,11 @@
 ![React](https://img.shields.io/badge/React-19.0.0-61dafb?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-3178c6?logo=typescript)
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.1.18-38bdf8?logo=tailwindcss)
-![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.3.0-ff6b6b)
-![HLS.js](https://img.shields.io/badge/HLS.js-1.6.15-ec407a)
+![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.4.0-ff6b6b)
+![HLS.js](https://img.shields.io/badge/HLS.js-1.6.16-ec407a)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Docker Ready](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Version](https://img.shields.io/badge/Version-6.2.0-orange)
+![Version](https://img.shields.io/badge/Version-6.6.3-orange)
 
 </div>
 
@@ -33,7 +33,7 @@
 
 ## 📢 About
 
-This project is a deep fork of **MoonTV**, starting from **v4.3.1** and continuously iterated to the current **v6.2.0**, with 60+ major feature modules and 400+ detail optimizations. See [CHANGELOG](CHANGELOG) for all new features.
+This project is a deep fork of **MoonTV**, starting from **v4.3.1** and continuously iterated to the current **v6.6.3**, with 60+ major feature modules and 400+ detail optimizations. See [CHANGELOG](CHANGELOG) for all new features.
 
 ## ⚠️ Disclaimer
 
@@ -42,14 +42,33 @@ This project is for educational purposes only. Do not use for commercial purpose
 ## 💡 Key Enhancements
 
 ### 🎥 Content Ecosystem
-- **Emby Private Library**: Complete Emby media server integration → [Documentation](docs/integration/EMBY_GUIDE.md)
-- **YouTube Integration**: Full YouTube search, playback, and live streaming
-- **Cloud Drive Search**: Advanced filtering and cache management
-- **ACG Torrent Search**: Mikan Project dual-source system
-- **Short Drama**: Complete short drama search, playback, and details
-- **IPTV Live TV**: m3u/m3u8 subscription, FLV streaming, EPG guide
+- **Multi-User Watch Room**: Synchronized playback, screen sharing, real-time chat, voice calls, WebRTC streaming, adjustable quality presets → [Documentation](docs/deployment/WATCH_ROOM_DEPLOYMENT.md)
+- **Emby Private Library**: Complete Emby media server integration with passwordless login, auth mode switcher, and multi-audio track playback → [Documentation](docs/integration/EMBY_GUIDE.md)
+- **YouTube Integration**: Full YouTube search, playback, live streaming, popular videos with region selector
+- **Bilibili Integration**: Bilibili search and playback with UP主 videos, popular videos, QR code login, cookie management
+- **Cloud Drive Search**: Advanced filtering and cache management, PanSou authentication support
+- **ACG Torrent Search**: Mikan Project dual-source system + Nyaa search with download export
+- **IPTV Live TV**: m3u/m3u8 subscription, FLV streaming, EPG guide, M3U import/export
 - **Bangumi Anime**: Intelligent anime detection and API integration
 - **Traditional Chinese Search**: Smart conversion and multi-strategy search
+- **Search List View**: Grid/list dual view mode with image preview and quick play button
+- **Douban Quick Info Panel**: Mobile ActionSheet with Douban details via quick-info and suggest API
+
+### 🎬 Player Enhancements
+- **TMDB Hero Banner**: Play page uses TMDB backdrop as main visual with logo, poster, rating, overview, and multi-season badge
+- **Episode Selector Enhancement**: Manual speed test feature with real-time source status badges (Available/Unavailable/Testing)
+- **Control Bar Opacity Control**: Customizable control bar obstruction (10-80%), real-time transparency and blur adjustment for better subtitle visibility
+- **Seek Buttons**: Customizable seek forward/backward buttons with Netflix-style design and responsive layout
+- **Ultrawide Monitor Support**: Video display mode control for ultrawide monitors
+- **Skip Presets**: Flexible intro/outro template system with import/export and validation
+- **Persistent Playback Rate**: Remember playback speed settings across sessions
+- **Multi-Audio Track Support**: Auto-select browser-compatible audio tracks for Emby playback with track switching; custom X-Emby-Authorization header support
+- **Video Resolution Filtering**: Auto-infer video stream resolution with resolution-based source filtering
+
+### 🔔 Content Tracking System
+- **Upcoming Content Reminders**: Complete watchlist and reminder system for upcoming content
+- **Auto Release Notifications**: Automatic push notifications when favorited content is released
+- **Invite Code System**: Registration system with invite codes, history tracking, and management
 
 ### 🤖 AI Recommendation System
 - **AI Assistant**: GPT-5/o series models support, streaming → [Documentation](docs/features/AI_FEATURES.md)
@@ -66,7 +85,14 @@ This project is for educational purposes only. Do not use for commercial purpose
 ### 📊 Performance & Monitoring
 - **Performance Dashboard**: Complete API performance monitoring
 - **Traffic Monitoring**: Real traffic monitoring and domain analysis
+- **Enhanced Watch Statistics**: Records login IP, geolocation (city/region/country), device type, browser and OS per login — visible to admins in the stats dashboard
 - **Kvrocks Persistence**: High-performance caching system
+- **TanStack Query Full Integration**:
+  - Smart data caching and automatic revalidation
+  - Infinite scroll optimization (Douban, ShortDrama pages)
+  - Virtual scrolling for large list performance
+  - Unified API cache strategy (2 hours)
+  - Reduced unnecessary network requests and re-renders
 
 ## 🚀 Quick Start
 
@@ -113,6 +139,7 @@ pnpm dev
 - 🤖 [AI Features](docs/features/AI_FEATURES.md)
 - 📥 [Download Features](docs/features/DOWNLOAD_FEATURES.md)
 - 📺 [Virtual Scroll Guide](docs/features/VIRTUAL_SCROLL_GUIDE.md)
+- 🎥 [Watch Room Deployment](docs/deployment/WATCH_ROOM_DEPLOYMENT.md)
 
 ### Integration Guides
 - 🎬 [Emby Integration](docs/integration/EMBY_GUIDE.md)
@@ -134,10 +161,10 @@ pnpm dev
 - **Frontend**: Next.js 16.1.0 + React 19.0.0
 - **Language**: TypeScript 5.8.3
 - **Styling**: TailwindCSS 4.1.18
-- **Video Player**: ArtPlayer 5.3.0 + HLS.js 1.6.15
-- **State Management**: TanStack Query 5.90.21
-- **Database**: Upstash Redis + Kvrocks
-- **Deployment**: Docker / Vercel
+- **Video Player**: ArtPlayer 5.4.0 + HLS.js 1.6.16
+- **State Management**: TanStack Query 5.100.14 (fully migrated, optimized data fetching and caching)
+- **Database**: Upstash Redis / Kvrocks / SQLite (three storage backends available)
+- **Deployment**: Docker / Vercel / Render / Tencent EdgeOne
 
 ## 📜 Changelog
 
@@ -159,7 +186,7 @@ This project is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/lic
 - ❌ You may not use this project for commercial purposes
 - ⚠️ If you remix, transform, or build upon the material, you must distribute your contributions under the same license
 
-© 2025 LunaTV Enhanced Edition & Contributors
+© 2025-2026 LunaTV Enhanced Edition & Contributors
 
 Based on [MoonTV](https://github.com/MoonTechLab/LunaTV).
 
@@ -167,7 +194,8 @@ Based on [MoonTV](https://github.com/MoonTechLab/LunaTV).
 
 ### Original Projects
 - [MoonTV](https://github.com/MoonTechLab/LunaTV) — Original project
-- [Selene](https://github.com/MoonTechLab/Selene) — Official mobile APP
+- [Selene](https://github.com/MoonTechLab/Selene) — Official mobile APP (iOS / Android phones)
+- [Selene-TV](https://github.com/MoonTechLab/Selene-TV) — Official Android TV client, optimized for remote control devices
 - [LibreTV](https://github.com/LibreSpark/LibreTV) — Inspiration source
 
 ### Core Dependencies

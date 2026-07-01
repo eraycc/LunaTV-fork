@@ -35,19 +35,23 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  Layout,
   Settings,
   Shield,
   TestTube,
+  Ticket,
   Tv,
   Upload,
   Users,
   Video,
+  X,
 } from 'lucide-react';
 import { GripVertical, KeyRound, MessageSquare } from 'lucide-react';
+import { pinyin } from 'pinyin-pro';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
+import { AdminConfig, AdminConfigResult, DEFAULT_CRON_CONFIG } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
 import AIRecommendConfig from '@/components/AIRecommendConfig';
@@ -62,12 +66,15 @@ import TrustedNetworkConfig from '@/components/TrustedNetworkConfig';
 import DanmuApiConfig from '@/components/DanmuApiConfig';
 import { TVBoxTokenCell, TVBoxTokenModal } from '@/components/TVBoxTokenManager';
 import YouTubeConfig from '@/components/YouTubeConfig';
-import ShortDramaConfig from '@/components/ShortDramaConfig';
+import BilibiliConfig from '@/components/BilibiliConfig';
+// import ShortDramaConfig from '@/components/ShortDramaConfig'; // 暂时隐藏短剧API配置
 import DownloadConfig from '@/components/OfflineDownloadConfig';
 import EmbyConfig from '@/components/EmbyConfig';
 import CustomAdFilterConfig from '@/components/CustomAdFilterConfig';
 import WatchRoomConfig from '@/components/WatchRoomConfig';
+import HomePageConfig from '@/components/HomePageConfig';
 import PerformanceMonitor from '@/components/admin/PerformanceMonitor';
+import InviteCodeManager from '@/components/InviteCodeManager';
 import PageLayout from '@/components/PageLayout';
 
 // 统一按钮样式系统
@@ -112,6 +119,27 @@ const buttonStyles = {
   quickAction: 'px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors',
 };
 
+/**
+ * 根据名称自动生成 Key（中文转拼音首字母）
+ * @param name 源名称
+ * @returns 生成的 Key
+ */
+const generateKeyFromName = (name: string): string => {
+  if (!name) return '';
+
+  const initials = name
+    .split('')
+    .map((char) => {
+      if (/[a-zA-Z]/.test(char)) return char.toUpperCase();
+      if (/[0-9]/.test(char)) return char;
+      const result = pinyin(char, { pattern: 'first', toneType: 'none' });
+      return result || char;
+    })
+    .join('');
+
+  return initials || name.substring(0, 4).toUpperCase();
+};
+
 // 通用弹窗组件
 interface AlertModalProps {
   isOpen: boolean;
@@ -121,6 +149,9 @@ interface AlertModalProps {
   message?: string;
   timer?: number;
   showConfirm?: boolean;
+  showUndo?: boolean; // 新增：显示撤销按钮
+  onUndo?: () => void; // 新增：撤销回调
+  undoTimer?: number; // 新增：撤销倒计时（毫秒）
 }
 
 const AlertModal = ({
@@ -130,22 +161,62 @@ const AlertModal = ({
   title,
   message,
   timer,
-  showConfirm = false
+  showConfirm = false,
+  showUndo = false,
+  onUndo,
+  undoTimer = 5000,
 }: AlertModalProps) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [isUndone, setIsUndone] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setIsVisible(true);
-      if (timer) {
-        setTimeout(() => {
+      setIsUndone(false);
+
+      // 如果有撤销功能，启动倒计时
+      if (showUndo && undoTimer) {
+        setCountdown(Math.ceil(undoTimer / 1000));
+        const countdownInterval = setInterval(() => {
+          setCountdown(prev => {
+            if (prev <= 1) {
+              clearInterval(countdownInterval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        const closeTimer = setTimeout(() => {
+          if (!isUndone) {
+            onClose();
+          }
+        }, undoTimer);
+
+        return () => {
+          clearInterval(countdownInterval);
+          clearTimeout(closeTimer);
+        };
+      } else if (timer) {
+        // 普通定时关闭
+        const closeTimer = setTimeout(() => {
           onClose();
         }, timer);
+        return () => clearTimeout(closeTimer);
       }
     } else {
       setIsVisible(false);
     }
-  }, [isOpen, timer, onClose]);
+  }, [isOpen, timer, showUndo, undoTimer, onClose, isUndone]);
+
+  const handleUndo = () => {
+    setIsUndone(true);
+    if (onUndo) {
+      onUndo();
+    }
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -193,7 +264,31 @@ const AlertModal = ({
             </p>
           )}
 
-          {showConfirm && (
+          {/* 撤销按钮和倒计时 */}
+          {showUndo && countdown > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <span>将在 {countdown} 秒后执行</span>
+              </div>
+              <div className="flex gap-2 justify-center">
+                <button
+                  onClick={handleUndo}
+                  className={`px-4 py-2 text-sm font-medium ${buttonStyles.warning}`}
+                >
+                  撤销
+                </button>
+                <button
+                  onClick={onClose}
+                  className={`px-4 py-2 text-sm font-medium ${buttonStyles.secondary}`}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 普通确认按钮 */}
+          {showConfirm && !showUndo && (
             <button
               onClick={onClose}
               className={`px-4 py-2 text-sm font-medium ${buttonStyles.primary}`}
@@ -217,6 +312,9 @@ const useAlertModal = () => {
     message?: string;
     timer?: number;
     showConfirm?: boolean;
+    showUndo?: boolean;
+    onUndo?: () => void;
+    undoTimer?: number;
   }>({
     isOpen: false,
     type: 'success',
@@ -298,6 +396,12 @@ interface SiteConfig {
   TMDBApiKey?: string;
   TMDBLanguage?: string;
   EnableTMDBActorSearch?: boolean;
+  // Bangumi API 代理
+  BangumiApiType?: string;
+  BangumiApiProxy?: string;
+  // Bangumi 图片代理
+  BangumiImageProxyType?: string;
+  BangumiImageProxy?: string;
 }
 
 // Cron 配置类型
@@ -445,6 +549,8 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 
   // 用户组筛选状态
   const [filterUserGroup, setFilterUserGroup] = useState<string>('all');
+  // 用户名搜索状态
+  const [filterUsername, setFilterUsername] = useState<string>('');
 
   // 🔑 TVBox Token 管理状态
   const [showTVBoxTokenModal, setShowTVBoxTokenModal] = useState(false);
@@ -813,7 +919,8 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
       | 'deleteUser',
     targetUsername: string,
     targetPassword?: string,
-    userGroup?: string
+    userGroup?: string,
+    options?: { skipToast?: boolean } // 新增：支持跳过通知
   ) => {
     try {
       const res = await fetch('/api/admin/user', {
@@ -834,23 +941,66 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 
       // 成功后刷新配置（无需整页刷新）
       await refreshConfig();
+
+      // 根据操作类型决定是否显示通知
+      // 频繁的切换操作（启用/禁用）默认不显示通知，除非明确要求
+      const silentActions = ['ban', 'unban']; // 频繁操作，默认静默
+      const shouldShowToast = options?.skipToast === false || !silentActions.includes(action);
+
+      if (shouldShowToast) {
+        const actionMessages: Record<string, string> = {
+          add: '用户添加成功',
+          ban: '用户已禁用',
+          unban: '用户已启用',
+          setAdmin: '已设置为管理员',
+          cancelAdmin: '已取消管理员权限',
+          changePassword: '密码修改成功',
+          deleteUser: '用户删除成功',
+        };
+        showSuccess(actionMessages[action] || '操作成功', showAlert);
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : '操作失败', showAlert);
+      throw err;
     }
   };
 
   const handleConfirmDeleteUser = async () => {
     if (!deletingUser) return;
 
-    await withLoading(`deleteUser_${deletingUser}`, async () => {
-      try {
-        await handleUserAction('deleteUser', deletingUser);
-        setShowDeleteUserModal(false);
-        setDeletingUser(null);
-      } catch (err) {
-        // 错误处理已在 handleUserAction 中处理
-      }
+    // 关闭确认对话框
+    setShowDeleteUserModal(false);
+    const usernameToDelete = deletingUser;
+    setDeletingUser(null);
+
+    // 使用撤销模式：显示带撤销按钮的通知
+    let undoCancelled = false;
+
+    showAlert({
+      type: 'warning',
+      title: '用户删除中',
+      message: `用户 ${usernameToDelete} 将被删除，点击撤销可取消操作`,
+      showUndo: true,
+      undoTimer: 5000,
+      onUndo: () => {
+        undoCancelled = true;
+        showSuccess('已取消删除操作', showAlert);
+      },
     });
+
+    // 5秒后执行真正的删除
+    setTimeout(async () => {
+      if (!undoCancelled) {
+        await withLoading(`deleteUser_${usernameToDelete}`, async () => {
+          try {
+            await handleUserAction('deleteUser', usernameToDelete, undefined, undefined, { skipToast: true });
+            showSuccess(`用户 ${usernameToDelete} 已删除`, showAlert);
+          } catch (err) {
+            // 错误处理已在 handleUserAction 中处理
+          }
+        });
+      }
+    }, 5000);
   };
 
   if (!config) {
@@ -934,6 +1084,73 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 </span>
               </div>
             </div>
+
+            {/* 需要邀请码注册设置 */}
+            {config.UserConfig.AllowRegister && (
+              <div className='p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <div className='font-medium text-gray-900 dark:text-gray-100'>
+                      需要邀请码注册
+                    </div>
+                    <div className='text-sm text-gray-600 dark:text-gray-400'>
+                      开启后，用户注册时必须提供有效的邀请码
+                    </div>
+                  </div>
+                  <div className='flex items-center'>
+                    <button
+                      type="button"
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+                        config.UserConfig.RequireInviteCode ? buttonStyles.toggleOn : buttonStyles.toggleOff
+                      }`}
+                      role="switch"
+                      aria-checked={config.UserConfig.RequireInviteCode}
+                      onClick={async () => {
+                        await withLoading('toggleRequireInviteCode', async () => {
+                          try {
+                            const response = await fetch('/api/admin/config', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                ...config,
+                                UserConfig: {
+                                  ...config.UserConfig,
+                                  RequireInviteCode: !config.UserConfig.RequireInviteCode
+                                }
+                              })
+                            });
+
+                            if (response.ok) {
+                              await refreshConfig();
+                              showAlert({
+                                type: 'success',
+                                title: '设置已更新',
+                                message: config.UserConfig.RequireInviteCode ? '已关闭邀请码注册' : '已开启邀请码注册',
+                                timer: 2000
+                              });
+                            } else {
+                              throw new Error('更新配置失败');
+                            }
+                          } catch (err) {
+                            showError(err instanceof Error ? err.message : '操作失败', showAlert);
+                          }
+                        });
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none inline-block h-5 w-5 rounded-full ${buttonStyles.toggleThumb} shadow transform ring-0 transition duration-200 ease-in-out ${
+                          config.UserConfig.RequireInviteCode ? buttonStyles.toggleThumbOn : buttonStyles.toggleThumbOff
+                        }`}
+                      />
+                    </button>
+                    <span className='ml-3 text-sm font-medium text-gray-900 dark:text-gray-100'>
+                      {config.UserConfig.RequireInviteCode ? '开启' : '关闭'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 自动清理非活跃用户设置 */}
             <div className='p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
@@ -1286,6 +1503,15 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 </option>
               ))}
             </select>
+            {/* 用户名搜索框 */}
+            <input
+              type='search'
+              aria-label='搜索用户名'
+              value={filterUsername}
+              onChange={(e) => setFilterUsername(e.target.value)}
+              placeholder='搜索用户名...'
+              className='px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent w-44'
+            />
           </div>
           <div className='flex items-center space-x-2'>
             {/* 批量操作按钮 */}
@@ -1508,6 +1734,12 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                   return priority(a) - priority(b);
                 })
                 .filter((user) => {
+                  // 用户名搜索过滤
+                  if (filterUsername.trim()) {
+                    if (!user.username.toLowerCase().includes(filterUsername.trim().toLowerCase())) {
+                      return false;
+                    }
+                  }
                   // 根据选择的用户组筛选用户
                   if (filterUserGroup === 'all') {
                     return true; // 显示所有用户
@@ -2735,6 +2967,9 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
 
 
@@ -3562,7 +3797,7 @@ const VideoSourceConfig = ({
       const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
       if (exportFormat === 'array') {
-        // 数组格式：[{name, key, api, detail, disabled, is_adult}]
+        // 数组格式：[{name, key, api, detail, disabled, is_adult, type, weight}]
         exportData = sourcesToExport.map((source) => ({
           name: source.name,
           key: source.key,
@@ -3570,10 +3805,12 @@ const VideoSourceConfig = ({
           detail: source.detail || '',
           disabled: source.disabled || false,
           is_adult: source.is_adult || false,
+          type: source.type || 'vod',
+          weight: source.weight ?? 50,
         }));
         filename = `video_sources_${timestamp}.json`;
       } else {
-        // 配置文件格式：{"api_site": {"key": {name, api, detail?, is_adult?}}}
+        // 配置文件格式：{"api_site": {"key": {name, api, detail?, is_adult?, type?, weight?}}}
         exportData = { api_site: {} };
         sourcesToExport.forEach((source) => {
           const sourceData: any = {
@@ -3586,6 +3823,12 @@ const VideoSourceConfig = ({
           }
           if (source.is_adult) {
             sourceData.is_adult = source.is_adult;
+          }
+          if (source.type && source.type !== 'vod') {
+            sourceData.type = source.type;
+          }
+          if (source.weight !== undefined && source.weight !== 50) {
+            sourceData.weight = source.weight;
           }
           exportData.api_site[source.key] = sourceData;
         });
@@ -3693,6 +3936,8 @@ const VideoSourceConfig = ({
             api: item.api,
             detail: item.detail || '',
             is_adult: item.is_adult || false,
+            type: item.type || 'vod',
+            weight: item.weight ?? 50,
           });
 
           result.success++;
@@ -4077,7 +4322,8 @@ const VideoSourceConfig = ({
               onChange={(e) => {
                 const name = e.target.value;
                 const isAdult = /^(AV-|成人|伦理|福利|里番|R18)/i.test(name);
-                setNewSource((prev) => ({ ...prev, name, is_adult: isAdult }));
+                const autoKey = generateKeyFromName(name);
+                setNewSource((prev) => ({ ...prev, name, key: autoKey, is_adult: isAdult }));
               }}
               className='px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
             />
@@ -4444,6 +4690,9 @@ const VideoSourceConfig = ({
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
 
       {/* 批量操作确认弹窗 */}
@@ -4855,6 +5104,9 @@ const CategoryConfig = ({
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
     </div>
   );
@@ -5090,6 +5342,9 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
     </div>
   );
@@ -5108,6 +5363,10 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     DoubanProxy: '',
     DoubanImageProxyType: 'direct',
     DoubanImageProxy: '',
+    BangumiApiType: 'cmliussss',
+    BangumiApiProxy: '',
+    BangumiImageProxyType: 'cmliussss',
+    BangumiImageProxy: '',
     EnablePuppeteer: false, // 默认关闭 Puppeteer
     DoubanCookies: '', // 默认无 Cookies
     DisableYellowFilter: false,
@@ -5121,18 +5380,14 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   });
 
   // Cron 配置状态
-  const [cronSettings, setCronSettings] = useState<CronConfig>({
-    enableAutoRefresh: true,
-    maxRecordsPerRun: 100,
-    onlyRefreshRecent: true,
-    recentDays: 30,
-    onlyRefreshOngoing: true,
-  });
+  const [cronSettings, setCronSettings] = useState<CronConfig>(DEFAULT_CRON_CONFIG);
 
   // 豆瓣数据源相关状态
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
     useState(false);
+  const [isBangumiApiDropdownOpen, setIsBangumiApiDropdownOpen] = useState(false);
+  const [isBangumiImageProxyDropdownOpen, setIsBangumiImageProxyDropdownOpen] = useState(false);
 
   // 豆瓣数据源选项
   const doubanDataSourceOptions = [
@@ -5143,6 +5398,22 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
       label: '豆瓣 CDN By CMLiussss（腾讯云）',
     },
     { value: 'cmliussss-cdn-ali', label: '豆瓣 CDN By CMLiussss（阿里云）' },
+    { value: 'cmliussss-unified', label: '豆瓣 CDN By CMLiussss（统一域名）' },
+    { value: 'custom', label: '自定义代理' },
+  ];
+
+  // Bangumi API 代理选项
+  const bangumiApiTypeOptions = [
+    { value: 'server', label: '服务端转发（默认，访问官方 api.bgm.tv）' },
+    { value: 'cmliussss', label: 'Bangumi 反代 By CMLiussss（解决服务器被墙）' },
+    { value: 'custom', label: '自定义反代地址' },
+  ];
+
+  // Bangumi 图片代理选项
+  const bangumiImageProxyTypeOptions = [
+    { value: 'server', label: '服务器代理（默认，由服务器代理请求）' },
+    { value: 'cmliussss', label: 'Bangumi 图片 CDN By CMLiussss' },
+    { value: 'direct', label: '直连（浏览器直接请求 lain.bgm.tv）' },
     { value: 'custom', label: '自定义代理' },
   ];
 
@@ -5170,6 +5441,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         };
       case 'cmliussss-cdn-tencent':
       case 'cmliussss-cdn-ali':
+      case 'cmliussss-unified':
         return {
           text: 'Thanks to @CMLiussss',
           url: 'https://github.com/cmliu',
@@ -5188,6 +5460,10 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         DoubanImageProxyType:
           config.SiteConfig.DoubanImageProxyType || 'direct',
         DoubanImageProxy: config.SiteConfig.DoubanImageProxy || '',
+        BangumiApiType: config.SiteConfig.BangumiApiType || 'cmliussss',
+        BangumiApiProxy: config.SiteConfig.BangumiApiProxy || '',
+        BangumiImageProxyType: config.SiteConfig.BangumiImageProxyType || 'cmliussss',
+        BangumiImageProxy: config.SiteConfig.BangumiImageProxy || '',
         EnablePuppeteer: config.DoubanConfig?.enablePuppeteer || false,
         DoubanCookies: config.DoubanConfig?.cookies || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
@@ -5206,11 +5482,11 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   useEffect(() => {
     if (config?.CronConfig) {
       setCronSettings({
-        enableAutoRefresh: config.CronConfig.enableAutoRefresh ?? true,
-        maxRecordsPerRun: config.CronConfig.maxRecordsPerRun ?? 100,
-        onlyRefreshRecent: config.CronConfig.onlyRefreshRecent ?? true,
-        recentDays: config.CronConfig.recentDays ?? 30,
-        onlyRefreshOngoing: config.CronConfig.onlyRefreshOngoing ?? true,
+        enableAutoRefresh: config.CronConfig.enableAutoRefresh ?? DEFAULT_CRON_CONFIG.enableAutoRefresh,
+        maxRecordsPerRun: config.CronConfig.maxRecordsPerRun ?? DEFAULT_CRON_CONFIG.maxRecordsPerRun,
+        onlyRefreshRecent: config.CronConfig.onlyRefreshRecent ?? DEFAULT_CRON_CONFIG.onlyRefreshRecent,
+        recentDays: config.CronConfig.recentDays ?? DEFAULT_CRON_CONFIG.recentDays,
+        onlyRefreshOngoing: config.CronConfig.onlyRefreshOngoing ?? DEFAULT_CRON_CONFIG.onlyRefreshOngoing,
       });
     }
   }, [config]);
@@ -5567,6 +5843,152 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
             />
             <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
               自定义图片代理服务器地址
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Bangumi API 代理设置 */}
+      <div className='space-y-3'>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Bangumi 数据代理
+          </label>
+          <div className='relative' data-dropdown='bangumi-api'>
+            <button
+              type='button'
+              onClick={() => setIsBangumiApiDropdownOpen(!isBangumiApiDropdownOpen)}
+              className="w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 text-left"
+            >
+              {bangumiApiTypeOptions.find(o => o.value === siteSettings.BangumiApiType)?.label}
+            </button>
+            <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
+              <ChevronDown className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isBangumiApiDropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+            {isBangumiApiDropdownOpen && (
+              <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                {bangumiApiTypeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type='button'
+                    onClick={() => {
+                      setSiteSettings(prev => ({ ...prev, BangumiApiType: option.value }));
+                      setIsBangumiApiDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${siteSettings.BangumiApiType === option.value ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-gray-100'}`}
+                  >
+                    <span className='truncate'>{option.label}</span>
+                    {siteSettings.BangumiApiType === option.value && (
+                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            选择获取 Bangumi 番剧数据的方式，服务器无法访问 api.bgm.tv 时可切换反代
+          </p>
+          {siteSettings.BangumiApiType === 'cmliussss' && (
+            <div className='mt-3'>
+              <button
+                type='button'
+                onClick={() => window.open('https://github.com/cmliu', '_blank')}
+                className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
+              >
+                <span className='font-medium'>Thanks to @CMLiussss</span>
+                <ExternalLink className='w-3.5 opacity-70' />
+              </button>
+            </div>
+          )}
+        </div>
+        {siteSettings.BangumiApiType === 'custom' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Bangumi 反代地址
+            </label>
+            <input
+              type='text'
+              placeholder='例如: https://bgm-proxy.example.com'
+              value={siteSettings.BangumiApiProxy || ''}
+              onChange={(e) => setSiteSettings(prev => ({ ...prev, BangumiApiProxy: e.target.value }))}
+              className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500"
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              与官方 api.bgm.tv 路径兼容的反代地址，不含末尾斜杠
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Bangumi 图片代理设置 */}
+      <div className='space-y-3'>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Bangumi 图片代理
+          </label>
+          <div className='relative' data-dropdown='bangumi-image-proxy'>
+            <button
+              type='button'
+              onClick={() => setIsBangumiImageProxyDropdownOpen(!isBangumiImageProxyDropdownOpen)}
+              className="w-full px-3 py-2.5 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 text-left"
+            >
+              {bangumiImageProxyTypeOptions.find(o => o.value === siteSettings.BangumiImageProxyType)?.label}
+            </button>
+            <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
+              <ChevronDown className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isBangumiImageProxyDropdownOpen ? 'rotate-180' : ''}`} />
+            </div>
+            {isBangumiImageProxyDropdownOpen && (
+              <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                {bangumiImageProxyTypeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type='button'
+                    onClick={() => {
+                      setSiteSettings(prev => ({ ...prev, BangumiImageProxyType: option.value }));
+                      setIsBangumiImageProxyDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${siteSettings.BangumiImageProxyType === option.value ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-gray-100'}`}
+                  >
+                    <span className='truncate'>{option.label}</span>
+                    {siteSettings.BangumiImageProxyType === option.value && (
+                      <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0 ml-2' />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            选择获取 Bangumi 封面图片的方式，服务器无法访问 lain.bgm.tv 时可切换
+          </p>
+          {siteSettings.BangumiImageProxyType === 'cmliussss' && (
+            <div className='mt-3'>
+              <button
+                type='button'
+                onClick={() => window.open('https://github.com/cmliu', '_blank')}
+                className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
+              >
+                <span className='font-medium'>Thanks to @CMLiussss</span>
+                <ExternalLink className='w-3.5 opacity-70' />
+              </button>
+            </div>
+          )}
+        </div>
+        {siteSettings.BangumiImageProxyType === 'custom' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Bangumi 图片代理地址
+            </label>
+            <input
+              type='text'
+              placeholder='例如: https://proxy.example.com/fetch?url='
+              value={siteSettings.BangumiImageProxy || ''}
+              onChange={(e) => setSiteSettings(prev => ({ ...prev, BangumiImageProxy: e.target.value }))}
+              className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500"
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              图片 URL 将以编码形式拼接在后面
             </p>
           </div>
         )}
@@ -6012,8 +6434,148 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
     </div>
+  );
+};
+
+// 直播源导入表单组件
+const LiveSourceImportForm = ({
+  onImport,
+  onCancel,
+}: {
+  onImport: (content: string, format: string, mode: 'merge' | 'replace') => Promise<void>;
+  onCancel: () => void;
+}) => {
+  const [content, setContent] = useState('');
+  const [format, setFormat] = useState('auto');
+  const [mode, setMode] = useState<'merge' | 'replace'>('merge');
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setContent(text);
+
+      if (file.name.endsWith('.m3u') || file.name.endsWith('.m3u8')) {
+        setFormat('m3u');
+      } else if (file.name.endsWith('.json')) {
+        setFormat('json');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSubmit = async () => {
+    if (!content.trim()) return;
+
+    setIsImporting(true);
+    try {
+      await onImport(content, format, mode);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className='p-6 space-y-5 max-h-[60vh] overflow-y-auto'>
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            导入方式
+          </label>
+          <div className='flex gap-4'>
+            <label className='flex items-center cursor-pointer'>
+              <input
+                type='radio'
+                checked={mode === 'merge'}
+                onChange={() => setMode('merge')}
+                className='mr-2 w-4 h-4 text-blue-600 focus:ring-blue-500'
+              />
+              <span className='text-sm text-gray-700 dark:text-gray-300'>合并（保留现有）</span>
+            </label>
+            <label className='flex items-center cursor-pointer'>
+              <input
+                type='radio'
+                checked={mode === 'replace'}
+                onChange={() => setMode('replace')}
+                className='mr-2 w-4 h-4 text-blue-600 focus:ring-blue-500'
+              />
+              <span className='text-sm text-gray-700 dark:text-gray-300'>替换（清空现有）</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            文件格式
+          </label>
+          <select
+            value={format}
+            onChange={(e) => setFormat(e.target.value)}
+            className='w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all'
+          >
+            <option value='auto'>自动检测</option>
+            <option value='json'>JSON</option>
+            <option value='m3u'>M3U/M3U8</option>
+          </select>
+        </div>
+
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            上传文件或粘贴内容
+          </label>
+          <input
+            type='file'
+            accept='.json,.m3u,.m3u8,.txt'
+            onChange={handleFileUpload}
+            className='mb-3 block w-full text-sm text-gray-500 dark:text-gray-400
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-lg file:border-0
+              file:text-sm file:font-semibold
+              file:bg-blue-50 file:text-blue-700
+              hover:file:bg-blue-100
+              dark:file:bg-blue-900/40 dark:file:text-blue-200
+              dark:hover:file:bg-blue-900/60
+              cursor-pointer'
+          />
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder='或直接粘贴 M3U/JSON 内容...'
+            rows={10}
+            className='w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all'
+          />
+          <p className='mt-1.5 text-xs text-gray-500 dark:text-gray-400'>
+            支持 M3U、M3U8 和 JSON 格式
+          </p>
+        </div>
+      </div>
+
+      <div className='flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700'>
+        <button
+          onClick={handleSubmit}
+          disabled={!content.trim() || isImporting}
+          className={buttonStyles.success + ' flex-1 disabled:opacity-50 disabled:cursor-not-allowed'}
+        >
+          {isImporting ? '导入中...' : '开始导入'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={isImporting}
+          className={buttonStyles.secondary + ' disabled:opacity-50 disabled:cursor-not-allowed'}
+        >
+          取消
+        </button>
+      </div>
+    </>
   );
 };
 
@@ -6032,6 +6594,25 @@ const LiveSourceConfig = ({
   const [editingLiveSource, setEditingLiveSource] = useState<LiveDataSource | null>(null);
   const [orderChanged, setOrderChanged] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [liveImportExportModal, setLiveImportExportModal] = useState<{
+    isOpen: boolean;
+    mode: 'import' | 'export' | 'result';
+    result?: {
+      success: number;
+      failed: number;
+      skipped: number;
+      details: Array<{
+        name: string;
+        key: string;
+        status: 'success' | 'failed' | 'skipped';
+        reason?: string;
+      }>;
+    };
+  }>({
+    isOpen: false,
+    mode: 'import',
+  });
+  const [showM3UImportForm, setShowM3UImportForm] = useState(false);
   const [newLiveSource, setNewLiveSource] = useState<LiveDataSource>({
     name: '',
     key: '',
@@ -6131,6 +6712,265 @@ const LiveSourceConfig = ({
         setIsRefreshing(false);
       }
     });
+  };
+
+  // 导出直播源
+  const handleExportLiveSources = (exportFormat: 'array' | 'config' = 'array') => {
+    try {
+      const customSources = liveSources.filter(s => s.from === 'custom');
+      if (customSources.length === 0) {
+        showAlert({
+          type: 'warning',
+          title: '没有可导出的直播源',
+          message: '请先添加自定义直播源后再导出',
+          timer: 2000
+        });
+        return;
+      }
+
+      const now = new Date();
+      const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      let exportData: any;
+      let filename: string;
+
+      if (exportFormat === 'config') {
+        // 配置文件格式: {"lives": {...}}
+        const lives: Record<string, {
+          name: string;
+          url: string;
+          ua?: string;
+          epg?: string;
+        }> = {};
+
+        customSources.forEach((source) => {
+          const liveItem: {
+            name: string;
+            url: string;
+            ua?: string;
+            epg?: string;
+          } = {
+            name: source.name,
+            url: source.url,
+          };
+          if (source.ua) liveItem.ua = source.ua;
+          if (source.epg) liveItem.epg = source.epg;
+          lives[source.key] = liveItem;
+        });
+
+        exportData = { lives };
+        filename = `live_config_${timestamp}.json`;
+      } else {
+        // 数组格式
+        exportData = customSources.map((source) => ({
+          name: source.name,
+          key: source.key,
+          url: source.url,
+          epg: source.epg || '',
+          ua: source.ua || '',
+          disabled: source.disabled || false,
+        }));
+        filename = `live_sources_${timestamp}.json`;
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      const formatText = exportFormat === 'config' ? '配置文件格式' : '数组格式';
+      showAlert({
+        type: 'success',
+        title: '导出成功',
+        message: `已导出 ${customSources.length} 个直播源（${formatText}）到 ${filename}`,
+        timer: 3000,
+      });
+
+      setLiveImportExportModal({ isOpen: false, mode: 'export' });
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导出失败',
+        message: err instanceof Error ? err.message : '未知错误',
+      });
+    }
+  };
+
+  // 导入直播源
+  const handleImportLiveSources = async (
+    file: File,
+    onProgress?: (current: number, total: number) => void
+  ) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      // 规范化导入数据
+      let importItems: any[] = [];
+      if (Array.isArray(parsed)) {
+        importItems = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        // 支持配置文件格式 {"lives": {...}}
+        const liveMap = parsed.lives && typeof parsed.lives === 'object' && !Array.isArray(parsed.lives)
+          ? parsed.lives
+          : parsed;
+
+        importItems = Object.entries(liveMap)
+          .filter(([, value]) => value && typeof value === 'object')
+          .map(([key, value]) => ({
+            key,
+            ...(value as Record<string, unknown>),
+          }))
+          .filter((item) => 'name' in item || 'url' in item);
+      }
+
+      if (importItems.length === 0) {
+        throw new Error('文件中没有可导入的直播源数据');
+      }
+
+      const result = {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        details: [] as Array<{
+          name: string;
+          key: string;
+          status: 'success' | 'failed' | 'skipped';
+          reason?: string;
+        }>,
+      };
+
+      const existingKeys = new Set(liveSources.map((source) => source.key));
+      const total = importItems.length;
+
+      for (let i = 0; i < importItems.length; i++) {
+        const rawItem = importItems[i] as Record<string, unknown>;
+        if (onProgress) {
+          onProgress(i + 1, total);
+        }
+
+        const key = typeof rawItem.key === 'string' ? rawItem.key.trim() : '';
+        const name = typeof rawItem.name === 'string' ? rawItem.name.trim() : '';
+        const url = typeof rawItem.url === 'string' ? rawItem.url.trim() : '';
+        const ua = typeof rawItem.ua === 'string' ? rawItem.ua.trim() : '';
+        const epg = typeof rawItem.epg === 'string' ? rawItem.epg.trim() : '';
+
+        if (!name || !key || !url) {
+          result.failed++;
+          result.details.push({
+            name: name || '未知',
+            key: key || '未知',
+            status: 'failed',
+            reason: '缺少必要字段（name、key 或 url）',
+          });
+          continue;
+        }
+
+        if (existingKeys.has(key)) {
+          result.skipped++;
+          result.details.push({
+            name,
+            key,
+            status: 'skipped',
+            reason: '该 key 已存在，跳过导入',
+          });
+          continue;
+        }
+
+        try {
+          await callLiveSourceApi({
+            action: 'add',
+            key,
+            name,
+            url,
+            ua,
+            epg,
+          });
+
+          existingKeys.add(key);
+          result.success++;
+          result.details.push({
+            name,
+            key,
+            status: 'success',
+          });
+        } catch (err) {
+          result.failed++;
+          result.details.push({
+            name,
+            key,
+            status: 'failed',
+            reason: err instanceof Error ? err.message : '导入失败',
+          });
+        }
+      }
+
+      setLiveImportExportModal({
+        isOpen: true,
+        mode: 'result',
+        result,
+      });
+
+      if (result.success > 0) {
+        await refreshConfig();
+      }
+
+      return result;
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导入失败',
+        message: err instanceof Error ? err.message : '文件解析失败',
+      });
+      setLiveImportExportModal({ isOpen: false, mode: 'import' });
+      return {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        details: [],
+      };
+    }
+  };
+
+  // M3U 导入
+  const handleM3UImport = async (content: string, format: string, mode: 'merge' | 'replace') => {
+    try {
+      const response = await fetch('/api/admin/live/import-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, format, mode }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || '导入失败');
+      }
+
+      const result = await response.json();
+
+      showAlert({
+        type: 'success',
+        title: '导入成功',
+        message: `成功导入 ${result.added} 个直播源，跳过 ${result.skipped} 个`,
+        timer: 3000,
+      });
+
+      setShowM3UImportForm(false);
+      await refreshConfig();
+    } catch (err) {
+      showAlert({
+        type: 'error',
+        title: '导入失败',
+        message: err instanceof Error ? err.message : '未知错误',
+      });
+      throw err;
+    }
   };
 
   const handleAddLiveSource = () => {
@@ -6363,6 +7203,27 @@ const LiveSourceConfig = ({
             <span>{isRefreshing || isLoading('refreshLiveSources') ? '刷新中...' : '刷新直播源'}</span>
           </button>
           <button
+            onClick={() => setLiveImportExportModal({ isOpen: true, mode: 'import' })}
+            className={buttonStyles.primary}
+          >
+            <Upload className='w-4 h-4 mr-1 inline' />
+            导入 JSON
+          </button>
+          <button
+            onClick={() => setShowM3UImportForm(true)}
+            className={buttonStyles.primary}
+          >
+            <Upload className='w-4 h-4 mr-1 inline' />
+            导入 M3U
+          </button>
+          <button
+            onClick={() => setLiveImportExportModal({ isOpen: true, mode: 'export' })}
+            className={buttonStyles.primary}
+          >
+            <Download className='w-4 h-4 mr-1 inline' />
+            导出
+          </button>
+          <button
             onClick={() => setShowAddForm(!showAddForm)}
             className={showAddForm ? buttonStyles.secondary : buttonStyles.success}
           >
@@ -6443,9 +7304,11 @@ const LiveSourceConfig = ({
               type='text'
               placeholder='名称'
               value={newLiveSource.name}
-              onChange={(e) =>
-                setNewLiveSource((prev) => ({ ...prev, name: e.target.value }))
-              }
+              onChange={(e) => {
+                const name = e.target.value;
+                const autoKey = generateKeyFromName(name);
+                setNewLiveSource((prev) => ({ ...prev, name, key: autoKey }));
+              }}
               className='px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
             />
             <input
@@ -6721,8 +7584,59 @@ const LiveSourceConfig = ({
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
 
+      {/* M3U 导入模态框 */}
+      {showM3UImportForm && createPortal(
+        <div className='fixed inset-0 bg-black/60 backdrop-blur-sm z-9999 flex items-center justify-center p-4'>
+          <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden'>
+            <div className='relative px-5 py-4 bg-gradient-to-r from-blue-600 to-cyan-600'>
+              <div className='flex items-center justify-between'>
+                <div className='flex items-center space-x-3'>
+                  <div className='bg-white/20 backdrop-blur-sm p-2 rounded-lg'>
+                    <Upload className='w-5 h-5 text-white' />
+                  </div>
+                  <div>
+                    <h2 className='text-lg font-bold text-white'>导入 M3U/M3U8</h2>
+                    <p className='text-white/80 text-xs mt-0.5'>支持 M3U、M3U8 和 JSON 格式</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowM3UImportForm(false)}
+                  className='text-white/80 hover:text-white hover:bg-white/20 p-1.5 rounded-lg transition-all'
+                >
+                  <X className='w-5 h-5' />
+                </button>
+              </div>
+            </div>
+            <LiveSourceImportForm
+              onImport={handleM3UImport}
+              onCancel={() => setShowM3UImportForm(false)}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 导入模态框 */}
+      {/* 直播源导入导出模态框 */}
+      <ImportExportModal
+        isOpen={liveImportExportModal.isOpen}
+        mode={liveImportExportModal.mode}
+        onClose={() => setLiveImportExportModal({ isOpen: false, mode: 'import' })}
+        onImport={handleImportLiveSources}
+        onExport={handleExportLiveSources}
+        result={liveImportExportModal.result}
+        entityName='直播源'
+        arrayFormatDescription='用于"直播源配置"卡片的导入功能，支持批量导入直播源'
+        configFormatDescription='用于"配置文件"卡片，可直接粘贴到配置文件编辑器中的 lives 字段'
+        configFormatExample='{"lives": {...}}'
+        arrayFilenameHint='live_sources_YYYYMMDD_HHMMSS.json'
+        configFilenameHint='live_config_YYYYMMDD_HHMMSS.json'
+      />
 
     </div>
   );
@@ -6743,7 +7657,10 @@ const NetDiskConfig = ({
     enabled: true,
     pansouUrl: 'https://so.252035.xyz',
     timeout: 30,
-    enabledCloudTypes: ['baidu', 'aliyun', 'quark', 'tianyi', 'uc', 'mobile', '115', 'pikpak', 'xunlei', '123', 'magnet', 'ed2k']
+    enabledCloudTypes: ['baidu', 'aliyun', 'quark', 'guangya', 'tianyi', 'uc', 'mobile', '115', 'pikpak', 'xunlei', '123', 'magnet', 'ed2k'],
+    token: '',
+    username: '',
+    password: '',
   });
 
   // 网盘类型选项
@@ -6751,6 +7668,7 @@ const NetDiskConfig = ({
     { key: 'baidu', name: '百度网盘', icon: '📁' },
     { key: 'aliyun', name: '阿里云盘', icon: '☁️' },
     { key: 'quark', name: '夸克网盘', icon: '⚡' },
+    { key: 'guangya', name: '光鸭云盘', icon: '🦆' },
     { key: 'tianyi', name: '天翼云盘', icon: '📱' },
     { key: 'uc', name: 'UC网盘', icon: '🌐' },
     { key: 'mobile', name: '移动云盘', icon: '📲' },
@@ -6769,7 +7687,10 @@ const NetDiskConfig = ({
         enabled: config.NetDiskConfig.enabled ?? true,
         pansouUrl: config.NetDiskConfig.pansouUrl || 'https://so.252035.xyz',
         timeout: config.NetDiskConfig.timeout || 30,
-        enabledCloudTypes: config.NetDiskConfig.enabledCloudTypes || ['baidu', 'aliyun', 'quark', 'tianyi', 'uc']
+        enabledCloudTypes: config.NetDiskConfig.enabledCloudTypes || ['baidu', 'aliyun', 'quark', 'tianyi', 'uc'],
+        token: config.NetDiskConfig.token || '',
+        username: config.NetDiskConfig.username || '',
+        password: config.NetDiskConfig.password || '',
       });
     }
   }, [config]);
@@ -6895,6 +7816,52 @@ const NetDiskConfig = ({
               className='w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500'
             />
           </div>
+
+          {/* 认证配置 */}
+          <div className='space-y-4 pt-2 border-t border-gray-200 dark:border-gray-700'>
+            <div>
+              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>认证配置（可选）</h4>
+              <p className='text-xs text-gray-500 dark:text-gray-400'>如果您的 PanSou 实例启用了认证，填写以下任意一种方式。用户名+密码优先级高于 Token。</p>
+            </div>
+            <div className='space-y-2'>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                Bearer Token
+              </label>
+              <input
+                type='password'
+                value={netDiskSettings.token}
+                onChange={(e) => setNetDiskSettings(prev => ({ ...prev, token: e.target.value }))}
+                placeholder='留空则不使用 Token 认证'
+                className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500'
+              />
+            </div>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+              <div className='space-y-2'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  用户名
+                </label>
+                <input
+                  type='text'
+                  value={netDiskSettings.username}
+                  onChange={(e) => setNetDiskSettings(prev => ({ ...prev, username: e.target.value }))}
+                  placeholder='PanSou 登录用户名'
+                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500'
+                />
+              </div>
+              <div className='space-y-2'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  密码
+                </label>
+                <input
+                  type='password'
+                  value={netDiskSettings.password}
+                  onChange={(e) => setNetDiskSettings(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder='PanSou 登录密码'
+                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500'
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -6971,6 +7938,9 @@ const NetDiskConfig = ({
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
     </div>
   );
@@ -6990,6 +7960,7 @@ function AdminPageClient() {
     sourceTest: false,
     liveSource: false,
     siteConfig: false,
+    homePageConfig: false,
     categoryConfig: false,
     netdiskConfig: false,
     aiRecommendConfig: false,
@@ -7004,6 +7975,7 @@ function AdminPageClient() {
     danmuApiConfig: false,
     telegramAuthConfig: false,
     oidcAuthConfig: false,
+    inviteCodeManager: false,
     configFile: false,
     cacheManager: false,
     dataMigration: false,
@@ -7156,6 +8128,21 @@ function AdminPageClient() {
               <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
+            {/* 首页模块配置标签 */}
+            <CollapsibleTab
+              title='首页模块配置'
+              icon={
+                <Layout
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.homePageConfig}
+              onToggle={() => toggleTab('homePageConfig')}
+            >
+              <HomePageConfig config={config} refreshConfig={fetchConfig} />
+            </CollapsibleTab>
+
             {/* 用户配置标签 */}
             <CollapsibleTab
               title='用户配置'
@@ -7171,6 +8158,20 @@ function AdminPageClient() {
                 refreshConfig={fetchConfig}
               />
             </CollapsibleTab>
+
+            {/* 邀请码管理标签 - 仅站长可见 */}
+            {role === 'owner' && (
+              <CollapsibleTab
+                title='邀请码管理'
+                icon={
+                  <Ticket size={20} className='text-blue-500 dark:text-blue-400' />
+                }
+                isExpanded={expandedTabs.inviteCodeManager}
+                onToggle={() => toggleTab('inviteCodeManager')}
+              >
+                <InviteCodeManager />
+              </CollapsibleTab>
+            )}
 
             {/* 视频源配置标签 */}
             <CollapsibleTab
@@ -7268,7 +8269,22 @@ function AdminPageClient() {
               <YouTubeConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
-            {/* 短剧API配置标签 */}
+            {/* Bilibili配置标签 */}
+            <CollapsibleTab
+              title='Bilibili配置'
+              icon={
+                <Video
+                  size={20}
+                  className='text-pink-600 dark:text-pink-400'
+                />
+              }
+              isExpanded={expandedTabs.bilibiliConfig}
+              onToggle={() => toggleTab('bilibiliConfig')}
+            >
+              <BilibiliConfig config={config} refreshConfig={fetchConfig} />
+            </CollapsibleTab>
+
+            {/* 短剧API配置标签 - 暂时隐藏，代码保留以后有用再显示
             <CollapsibleTab
               title='短剧API配置'
               icon={
@@ -7282,6 +8298,7 @@ function AdminPageClient() {
             >
               <ShortDramaConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
+            */}
 
             {/* Emby配置标签 */}
             <CollapsibleTab
@@ -7371,7 +8388,7 @@ function AdminPageClient() {
                 isExpanded={expandedTabs.trustedNetworkConfig}
                 onToggle={() => toggleTab('trustedNetworkConfig')}
               >
-                <TrustedNetworkConfig config={config} refreshConfig={fetchConfig} />
+                <TrustedNetworkConfig />
               </CollapsibleTab>
             )}
 
@@ -7563,6 +8580,9 @@ function AdminPageClient() {
         message={alertModal.message}
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
+        showUndo={alertModal.showUndo}
+        onUndo={alertModal.onUndo}
+        undoTimer={alertModal.undoTimer}
       />
 
       {/* 重置配置确认弹窗 */}

@@ -9,47 +9,13 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
-// 备用 API（乱短剧API）
-const FALLBACK_API_BASE = 'https://api.r2afosne.dpdns.org';
-
-// 从单个短剧源获取数据（通过分类名称查找）
+// 从单个短剧源获取数据（直接按 categoryId 查询）
 async function fetchListFromSource(
   api: string,
+  categoryId: number,
   page: number,
   size: number
 ) {
-  // Step 1: 获取分类列表，找到"短剧"分类的ID
-  const listUrl = `${api}?ac=list`;
-
-  const listResponse = await fetch(listUrl, {
-    headers: {
-      'User-Agent': DEFAULT_USER_AGENT,
-      'Accept': 'application/json',
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!listResponse.ok) {
-    throw new Error(`HTTP error! status: ${listResponse.status}`);
-  }
-
-  const listData = await listResponse.json();
-  const categories = listData.class || [];
-
-  // 查找"短剧"分类（只要包含"短剧"两个字即可）
-  const shortDramaCategory = categories.find((cat: any) =>
-    cat.type_name && cat.type_name.includes('短剧')
-  );
-
-  if (!shortDramaCategory) {
-    console.log(`该源没有短剧分类`);
-    return { list: [], hasMore: false };
-  }
-
-  const categoryId = shortDramaCategory.type_id;
-  console.log(`找到短剧分类ID: ${categoryId}`);
-
-  // Step 2: 获取该分类的短剧列表
   const apiUrl = `${api}?ac=detail&t=${categoryId}&pg=${page}`;
 
   const response = await fetch(apiUrl, {
@@ -88,53 +54,6 @@ async function fetchListFromSource(
   };
 }
 
-// 从备用 API（乱短剧API）获取列表数据 - 使用 /vod/list
-async function fetchListFromFallbackApi(
-  categoryId: number,
-  page: number,
-  size: number
-) {
-  console.log('🔄 尝试备用API列表: 乱短剧API /vod/list');
-
-  const apiUrl = `${FALLBACK_API_BASE}/vod/list?categoryId=${categoryId}&page=${page}`;
-
-  const response = await fetch(apiUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Fallback API HTTP error! status: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const items = data.list || [];
-
-  console.log(`✅ 备用API列表返回 ${items.length} 条数据`);
-
-  const list = items.slice(0, size).map((item: any) => ({
-    id: item.id,
-    name: item.name,
-    cover: item.cover || '',
-    update_time: item.update_time || new Date().toISOString(),
-    score: parseFloat(item.score) || 0,
-    episode_count: parseInt(String(item.episode_count || '1').replace(/[^\d]/g, '') || '1'),
-    description: item.description || '',
-    author: item.author || '',
-    backdrop: item.cover || '',
-    vote_average: parseFloat(item.score) || 0,
-    _source: 'fallback_api',
-  }));
-
-  return {
-    list,
-    hasMore: data.currentPage < data.totalPages,
-  };
-}
-
 // 服务端专用函数，从所有短剧源聚合数据
 async function getShortDramaListInternal(
   category: number,
@@ -152,7 +71,8 @@ async function getShortDramaListInternal(
     // 如果没有配置短剧源，使用默认源
     if (shortDramaSources.length === 0) {
       return await fetchListFromSource(
-        'https://wwzy.tv/api.php/provide/vod',
+        'https://tyyszyapi.com/api.php/provide/vod',
+        category,
         page,
         size
       );
@@ -161,7 +81,7 @@ async function getShortDramaListInternal(
     // 有配置短剧源，聚合所有源的数据
     const results = await Promise.allSettled(
       shortDramaSources.map(source => {
-        return fetchListFromSource(source.api, page, size);
+        return fetchListFromSource(source.api, category, page, size);
       })
     );
 
@@ -195,20 +115,14 @@ async function getShortDramaListInternal(
     // fallback到默认源
     try {
       return await fetchListFromSource(
-        'https://wwzy.tv/api.php/provide/vod',
+        'https://tyyszyapi.com/api.php/provide/vod',
+        category,
         page,
         size
       );
     } catch (fallbackError) {
       console.error('默认源也失败:', fallbackError);
-      // 尝试备用API
-      try {
-        console.log('⚠️ 默认源失败，尝试备用API');
-        return await fetchListFromFallbackApi(category, page, size);
-      } catch (fallbackApiError) {
-        console.error('备用API也失败:', fallbackApiError);
-        return { list: [], hasMore: false };
-      }
+      return { list: [], hasMore: false };
     }
   }
 }
@@ -292,18 +206,17 @@ export async function GET(request: NextRequest) {
     });
 
     // 设置与网页端一致的缓存策略（lists: 2小时）
+    const cacheTime = await getCacheTime();
     const response = NextResponse.json(result);
 
-    console.log('🕐 [LIST] 设置2小时HTTP缓存 - 与网页端lists缓存一致');
+    console.log(`🕐 [LIST] 设置 ${cacheTime / 3600} 小时 HTTP 缓存`);
 
-    // 2小时 = 7200秒（与网页端SHORTDRAMA_CACHE_EXPIRE.lists一致）
-    const cacheTime = 7200;
     response.headers.set('Cache-Control', `public, max-age=${cacheTime}, s-maxage=${cacheTime}`);
     response.headers.set('CDN-Cache-Control', `public, s-maxage=${cacheTime}`);
     response.headers.set('Vercel-CDN-Cache-Control', `public, s-maxage=${cacheTime}`);
 
     // 调试信息
-    response.headers.set('X-Cache-Duration', '2hour');
+    response.headers.set('X-Cache-Duration', `${cacheTime / 3600}hours`);
     response.headers.set('X-Cache-Expires-At', new Date(Date.now() + cacheTime * 1000).toISOString());
     response.headers.set('X-Debug-Timestamp', new Date().toISOString());
 

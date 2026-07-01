@@ -3,6 +3,7 @@
 'use client';
 
 import { AlertCircle, CheckCircle, User, Lock, Sparkles, UserPlus, Send } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -72,7 +73,7 @@ function LoginPageClient() {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [shouldAskUsername, setShouldAskUsername] = useState(false);
+  const shouldAskUsername = process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'localstorage';
   const [bingWallpaper, setBingWallpaper] = useState<string>('');
 
   // Telegram Magic Link 状态
@@ -109,14 +110,6 @@ function LoginPageClient() {
     };
 
     fetchBingWallpaper();
-  }, []);
-
-  // 在客户端挂载后设置配置
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storageType = (window as any).RUNTIME_CONFIG?.STORAGE_TYPE;
-      setShouldAskUsername(storageType && storageType !== 'localstorage');
-    }
   }, []);
 
   // 获取 Telegram Magic Link 配置
@@ -251,7 +244,7 @@ function LoginPageClient() {
 
 
   return (
-    <div className='relative min-h-screen flex items-center justify-center px-3 sm:px-4 py-8 sm:py-0 overflow-hidden'>
+    <div translate="no" className='fixed inset-0 z-50 flex items-center justify-center px-3 sm:px-4 py-8 sm:py-0 overflow-hidden bg-gradient-to-br from-purple-100 via-blue-50 to-pink-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900'>
       {/* Bing 每日壁纸背景 */}
       {bingWallpaper && (
         <div
@@ -364,14 +357,15 @@ function LoginPageClient() {
               <p className='text-center text-gray-600 dark:text-gray-400 text-xs sm:text-sm mb-2.5 sm:mb-3'>
                 还没有账户？
               </p>
-              <a
+              <Link
                 href='/register'
+                prefetch={true}
                 className='group flex items-center justify-center gap-1.5 sm:gap-2 w-full px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800/50 text-green-700 dark:text-green-400 text-xs sm:text-sm font-semibold hover:from-green-100 hover:to-emerald-100 dark:hover:from-green-900/30 dark:hover:to-emerald-900/30 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-100'
               >
                 <UserPlus className='w-3.5 h-3.5 sm:w-4 sm:h-4' />
                 <span>立即注册</span>
                 <span className='inline-block transition-transform group-hover:translate-x-1'>→</span>
-              </a>
+              </Link>
             </div>
           )}
         </form>
@@ -509,7 +503,7 @@ function LoginPageClient() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={null}>
       <LoginPageClient />
     </Suspense>
   );

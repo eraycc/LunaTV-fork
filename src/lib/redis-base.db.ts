@@ -8,6 +8,7 @@ import {
   ContentStat,
   EpisodeSkipConfig,
   Favorite,
+  Reminder,
   IStorage,
   PlayRecord,
   PlayStatsResult,
@@ -265,6 +266,47 @@ export abstract class BaseRedisStorage implements IStorage {
     await this.withRetry(() => this.client.del(this.favHashKey(userName)));
   }
 
+  // ---------- 提醒相关 ----------
+  private reminderHashKey(user: string) {
+    return `u:${user}:reminders`;
+  }
+
+  async getReminder(userName: string, key: string): Promise<Reminder | null> {
+    const val = await this.withRetry(() =>
+      this.client.hGet(this.reminderHashKey(userName), key)
+    );
+    return val ? (JSON.parse(val) as Reminder) : null;
+  }
+
+  async setReminder(
+    userName: string,
+    key: string,
+    reminder: Reminder
+  ): Promise<void> {
+    await this.withRetry(() =>
+      this.client.hSet(this.reminderHashKey(userName), key, JSON.stringify(reminder))
+    );
+  }
+
+  async getAllReminders(userName: string): Promise<Record<string, Reminder>> {
+    const all = await this.withRetry(() =>
+      this.client.hGetAll(this.reminderHashKey(userName))
+    );
+    const result: Record<string, Reminder> = {};
+    for (const [field, raw] of Object.entries(all)) {
+      if (raw) result[field] = JSON.parse(raw) as Reminder;
+    }
+    return result;
+  }
+
+  async deleteReminder(userName: string, key: string): Promise<void> {
+    await this.withRetry(() => this.client.hDel(this.reminderHashKey(userName), key));
+  }
+
+  async deleteAllReminders(userName: string): Promise<void> {
+    await this.withRetry(() => this.client.del(this.reminderHashKey(userName)));
+  }
+
   // ---------- 批量写入（hSet 支持多字段，一次命令）----------
   async setPlayRecordsBatch(
     userName: string,
@@ -356,6 +398,7 @@ export abstract class BaseRedisStorage implements IStorage {
     // 直接删除 Hash key（无需扫描）
     await this.withRetry(() => this.client.del(this.prHashKey(userName)));
     await this.withRetry(() => this.client.del(this.favHashKey(userName)));
+    await this.withRetry(() => this.client.del(this.reminderHashKey(userName))); // 删除提醒
     await this.withRetry(() => this.client.del(this.skipHashKey(userName)));
     await this.withRetry(() => this.client.del(this.episodeSkipHashKey(userName)));
 
@@ -1147,12 +1190,11 @@ export abstract class BaseRedisStorage implements IStorage {
 
       if (records.length === 0) {
         // 即使没有播放记录，也要获取登入统计
-        let loginStats = {
-          loginCount: 0,
-          firstLoginTime: 0,
-          lastLoginTime: 0,
-          lastLoginDate: 0
-        };
+        let loginStats: {
+          loginCount: number; firstLoginTime: number; lastLoginTime: number; lastLoginDate: number;
+          lastLoginIp?: string; lastLoginLocation?: string; lastLoginDevice?: string;
+          lastLoginBrowser?: string; lastLoginOs?: string;
+        } = { loginCount: 0, firstLoginTime: 0, lastLoginTime: 0, lastLoginDate: 0 };
 
         try {
           const loginStatsKey = `user_login_stats:${userName}`;
@@ -1163,7 +1205,12 @@ export abstract class BaseRedisStorage implements IStorage {
               loginCount: parsed.loginCount || 0,
               firstLoginTime: parsed.firstLoginTime || 0,
               lastLoginTime: parsed.lastLoginTime || 0,
-              lastLoginDate: parsed.lastLoginDate || parsed.lastLoginTime || 0
+              lastLoginDate: parsed.lastLoginDate || parsed.lastLoginTime || 0,
+              lastLoginIp: parsed.lastLoginIp,
+              lastLoginLocation: parsed.lastLoginLocation,
+              lastLoginDevice: parsed.lastLoginDevice,
+              lastLoginBrowser: parsed.lastLoginBrowser,
+              lastLoginOs: parsed.lastLoginOs,
             };
           }
         } catch (error) {
@@ -1183,10 +1230,15 @@ export abstract class BaseRedisStorage implements IStorage {
           firstWatchDate: Date.now(),
           lastUpdateTime: Date.now(),
           // 登入统计字段
-          loginCount: loginStats.loginCount,
-          firstLoginTime: loginStats.firstLoginTime,
-          lastLoginTime: loginStats.lastLoginTime,
-          lastLoginDate: loginStats.lastLoginDate
+          loginCount: (loginStats as any).loginCount,
+          firstLoginTime: (loginStats as any).firstLoginTime,
+          lastLoginTime: (loginStats as any).lastLoginTime,
+          lastLoginDate: (loginStats as any).lastLoginDate,
+          lastLoginIp: (loginStats as any).lastLoginIp,
+          lastLoginLocation: (loginStats as any).lastLoginLocation,
+          lastLoginDevice: (loginStats as any).lastLoginDevice,
+          lastLoginBrowser: (loginStats as any).lastLoginBrowser,
+          lastLoginOs: (loginStats as any).lastLoginOs,
         };
       }
 
@@ -1222,12 +1274,12 @@ export abstract class BaseRedisStorage implements IStorage {
         : '';
 
       // 获取登入统计数据
-      let loginStats = {
-        loginCount: 0,
-        firstLoginTime: 0,
-        lastLoginTime: 0,
-        lastLoginDate: 0
-      };
+      // 获取登入统计数据
+      let loginStats: {
+        loginCount: number; firstLoginTime: number; lastLoginTime: number; lastLoginDate: number;
+        lastLoginIp?: string; lastLoginLocation?: string; lastLoginDevice?: string;
+        lastLoginBrowser?: string; lastLoginOs?: string;
+      } = { loginCount: 0, firstLoginTime: 0, lastLoginTime: 0, lastLoginDate: 0 };
 
       try {
         const loginStatsKey = `user_login_stats:${userName}`;
@@ -1238,7 +1290,12 @@ export abstract class BaseRedisStorage implements IStorage {
             loginCount: parsed.loginCount || 0,
             firstLoginTime: parsed.firstLoginTime || 0,
             lastLoginTime: parsed.lastLoginTime || 0,
-            lastLoginDate: parsed.lastLoginDate || parsed.lastLoginTime || 0
+            lastLoginDate: parsed.lastLoginDate || parsed.lastLoginTime || 0,
+            lastLoginIp: parsed.lastLoginIp,
+            lastLoginLocation: parsed.lastLoginLocation,
+            lastLoginDevice: parsed.lastLoginDevice,
+            lastLoginBrowser: parsed.lastLoginBrowser,
+            lastLoginOs: parsed.lastLoginOs,
           };
         }
       } catch (error) {
@@ -1261,7 +1318,12 @@ export abstract class BaseRedisStorage implements IStorage {
         loginCount: loginStats.loginCount,
         firstLoginTime: loginStats.firstLoginTime,
         lastLoginTime: loginStats.lastLoginTime,
-        lastLoginDate: loginStats.lastLoginDate
+        lastLoginDate: loginStats.lastLoginDate,
+        lastLoginIp: loginStats.lastLoginIp,
+        lastLoginLocation: loginStats.lastLoginLocation,
+        lastLoginDevice: loginStats.lastLoginDevice,
+        lastLoginBrowser: loginStats.lastLoginBrowser,
+        lastLoginOs: loginStats.lastLoginOs,
       };
     } catch (error) {
       console.error(`获取用户 ${userName} 统计失败:`, error);
@@ -1372,12 +1434,12 @@ export abstract class BaseRedisStorage implements IStorage {
   async updateUserLoginStats(
     userName: string,
     loginTime: number,
-    isFirstLogin?: boolean
+    isFirstLogin?: boolean,
+    loginMeta?: { ip?: string; location?: string; device?: string; browser?: string; os?: string }
   ): Promise<void> {
     try {
       const loginStatsKey = `user_login_stats:${userName}`;
 
-      // 获取当前登入统计数据
       const currentStats = await this.client.get(loginStatsKey);
       const loginStats = currentStats ? JSON.parse(currentStats) : {
         loginCount: 0,
@@ -1386,17 +1448,22 @@ export abstract class BaseRedisStorage implements IStorage {
         lastLoginDate: null
       };
 
-      // 更新统计数据
       loginStats.loginCount = (loginStats.loginCount || 0) + 1;
       loginStats.lastLoginTime = loginTime;
-      loginStats.lastLoginDate = loginTime; // 保持兼容性
+      loginStats.lastLoginDate = loginTime;
 
-      // 如果是首次登入，记录首次登入时间
       if (isFirstLogin || !loginStats.firstLoginTime) {
         loginStats.firstLoginTime = loginTime;
       }
 
-      // 保存更新后的统计数据
+      if (loginMeta) {
+        if (loginMeta.ip) loginStats.lastLoginIp = loginMeta.ip;
+        if (loginMeta.location) loginStats.lastLoginLocation = loginMeta.location;
+        if (loginMeta.device) loginStats.lastLoginDevice = loginMeta.device;
+        if (loginMeta.browser) loginStats.lastLoginBrowser = loginMeta.browser;
+        if (loginMeta.os) loginStats.lastLoginOs = loginMeta.os;
+      }
+
       await this.client.set(loginStatsKey, JSON.stringify(loginStats));
 
       console.log(`用户 ${userName} 登入统计已更新:`, loginStats);
@@ -1436,6 +1503,70 @@ export abstract class BaseRedisStorage implements IStorage {
       console.log(`用户 ${userName} Emby 配置已删除`);
     } catch (error) {
       console.error(`删除用户 ${userName} Emby 配置失败:`, error);
+      throw error;
+    }
+  }
+
+  // 崩溃日志相关
+  async saveCrashLog(crashLog: any): Promise<void> {
+    try {
+      const key = `crash-log:${crashLog.timestamp}`;
+      // 保存崩溃日志，设置 7 天 TTL (604800 秒)
+      await this.client.set(key, JSON.stringify(crashLog), { EX: 604800 });
+      console.log(`崩溃日志已保存: ${crashLog.timestamp}`);
+    } catch (error) {
+      console.error('保存崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async getCrashLogs(limit: number = 50): Promise<any[]> {
+    try {
+      // 获取所有崩溃日志的 key
+      const keys = await this.client.keys('crash-log:*');
+
+      if (keys.length === 0) {
+        return [];
+      }
+
+      // 批量获取崩溃日志
+      const logs = await this.client.mGet(keys);
+
+      // 解析并排序（按时间戳降序）
+      const parsedLogs = logs
+        .filter((log): log is string => log !== null)
+        .map((log) => JSON.parse(log))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, limit);
+
+      return parsedLogs;
+    } catch (error) {
+      console.error('获取崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async deleteCrashLog(timestamp: string): Promise<void> {
+    try {
+      const key = `crash-log:${timestamp}`;
+      await this.client.del(key);
+      console.log(`崩溃日志已删除: ${timestamp}`);
+    } catch (error) {
+      console.error('删除崩溃日志失败:', error);
+      throw error;
+    }
+  }
+
+  async clearCrashLogs(): Promise<void> {
+    try {
+      const keys = await this.client.keys('crash-log:*');
+
+      if (keys.length > 0) {
+        await this.client.del(keys);
+        console.log(`已清除 ${keys.length} 条崩溃日志`);
+      }
+    } catch (error) {
+      console.error('清除崩溃日志失败:', error);
       throw error;
     }
   }
