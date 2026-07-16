@@ -58,7 +58,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl, VideoSourceTestResult } from '@/lib/utils';
+import { applyVideoPlayProxy, getVideoResolutionFromM3u8, processImageUrl, stripVideoPlayProxy, VideoSourceTestResult } from '@/lib/utils';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { useWatchRoomSync } from './hooks/useWatchRoomSync';
 import {
@@ -2220,7 +2220,7 @@ function PlayPageClient() {
 
         if (response.ok) {
           const result = await response.json();
-          const newUrl = result.url || '';
+          const newUrl = applyVideoPlayProxy(result.url || '');
           if (newUrl !== videoUrl) {
             setVideoUrl(newUrl);
           }
@@ -2248,6 +2248,11 @@ function PlayPageClient() {
       if (isEmbySource && newUrl && currentAudioTrackRef.current >= 0) {
         newUrl = appendAudioStreamIndex(newUrl, currentAudioTrackRef.current);
         console.log('🎵 换集时应用音轨参数:', currentAudioTrackRef.current);
+      }
+
+      // ☁️ Emby 源需要自定义鉴权头，不走 Cloudflare Worker 代理；其余源套一层加速
+      if (!isEmbySource) {
+        newUrl = applyVideoPlayProxy(newUrl);
       }
 
       if (newUrl !== videoUrl) {
@@ -4248,6 +4253,9 @@ function PlayPageClient() {
           // 🔥 修复：标记切换中，阻止 video:ratechange 将浏览器重置的 1.0 保存到 localStorage
           isSourceSwitchingRef.current = true;
 
+        // ☁️ 新地址切换，重置 Worker 代理降级标记（非 m3u8 路径用）
+        artPlayerRef.current._proxyFallbackDone = false;
+
         let switchPromise: Promise<any>;
         if (isEpisodeChange) {
           console.log(`🎯 开始切换集数: ${videoUrl} (重置播放时间到0)`);
@@ -4433,7 +4441,10 @@ function PlayPageClient() {
             if (video.hls) {
               video.hls.destroy();
             }
-            
+
+            // ☁️ 新地址加载，重置 Worker 代理降级标记
+            (video as any)._proxyFallbackDone = false;
+
             // 在函数内部重新检测iOS13+设备
             const localIsIOS13 = isIOS13;
 
@@ -4593,10 +4604,19 @@ function PlayPageClient() {
 
               if (data.fatal) {
                 switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
+                  case Hls.ErrorTypes.NETWORK_ERROR: {
+                    // ☁️ Worker 代理请求致命失败（超时/502等）时，自动降级到直连原始地址，避免播放中断
+                    const rawUrl = !(video as any)._proxyFallbackDone ? stripVideoPlayProxy(url) : null;
+                    if (rawUrl) {
+                      console.warn('Worker 代理网络错误，降级为直连:', rawUrl);
+                      (video as any)._proxyFallbackDone = true;
+                      hls.loadSource(rawUrl);
+                      break;
+                    }
                     console.log('网络错误，尝试恢复...');
                     hls.startLoad();
                     break;
+                  }
                   case Hls.ErrorTypes.MEDIA_ERROR:
                     console.log('媒体错误，尝试恢复...');
                     hls.recoverMediaError();
@@ -5897,6 +5917,17 @@ function PlayPageClient() {
         console.error('播放器错误:', err);
         if (artPlayerRef.current.currentTime > 0) {
           return;
+        }
+
+        // ☁️ 非 m3u8 格式（走原生 <video src>）Worker 代理失败时，自动降级为直连原始地址
+        // m3u8 格式的降级在 customType.m3u8 的 Hls.Events.ERROR 处理里完成，此处跳过避免重复
+        if (!artPlayerRef.current._proxyFallbackDone) {
+          const rawUrl = stripVideoPlayProxy(videoUrl);
+          if (rawUrl && !/\.m3u8(\?|#|$)/i.test(videoUrl)) {
+            console.warn('Worker 代理播放错误，降级为直连:', rawUrl);
+            artPlayerRef.current._proxyFallbackDone = true;
+            artPlayerRef.current.switchUrl(rawUrl);
+          }
         }
       });
 
