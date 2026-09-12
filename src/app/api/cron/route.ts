@@ -18,6 +18,9 @@ export const runtime = 'nodejs';
 
 // 添加全局锁避免并发执行
 let isRunning = false;
+// 时间节流：避免频繁触发定时任务，最小执行间隔 5 分钟
+let lastRunAt = 0;
+const MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 // ========== 🚀 阶段2优化：性能统计接口 ==========
 
@@ -203,8 +206,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(alreadyRunningResponse);
   }
 
+  // 时间节流检查：避免频繁触发
+  const now = Date.now();
+  if (now - lastRunAt < MIN_INTERVAL_MS) {
+    console.log(`⚠️ 距离上次执行不足 ${MIN_INTERVAL_MS / 1000 / 60} 分钟，跳过此次请求`);
+    const throttledResponse = {
+      success: false,
+      message: 'Cron job skipped, triggered too frequently',
+      timestamp: new Date().toISOString(),
+      nextAllowedAt: new Date(lastRunAt + MIN_INTERVAL_MS).toISOString(),
+    };
+    const responseSize = Buffer.byteLength(JSON.stringify(throttledResponse), 'utf8');
+
+    recordRequest({
+      timestamp: startTime,
+      method: 'GET',
+      path: '/api/cron',
+      statusCode: 200,
+      duration: Date.now() - startTime,
+      memoryUsed: (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
+      dbQueries: getDbQueryCount(),
+      requestSize: 0,
+      responseSize,
+    });
+
+    return NextResponse.json(throttledResponse);
+  }
+
   try {
     isRunning = true;
+    lastRunAt = now; // 更新最后执行时间
     console.log('Cron job triggered:', new Date().toISOString());
 
     await cronJob();

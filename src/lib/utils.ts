@@ -426,12 +426,11 @@ export async function getVideoResolutionFromM3u8(
 
       const hls = new Hls(hlsConfig);
 
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error('Timeout loading video metadata'));
-      }, timeoutMs);
-
+      // 统一的资源释放，重复调用安全
+      let released = false;
       const cleanup = () => {
+        if (released) return;
+        released = true;
         clearTimeout(timeout);
         try {
           if (hls) hls.destroy();
@@ -448,6 +447,11 @@ export async function getVideoResolutionFromM3u8(
           console.warn('Video cleanup error:', e);
         }
       };
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timeout loading video metadata'));
+      }, timeoutMs);
 
       video.onerror = () => {
         cleanup();

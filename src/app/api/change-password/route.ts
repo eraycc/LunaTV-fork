@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { newPassword } = body;
+    const { oldPassword, newPassword } = body;
 
     // 获取认证信息
     const authInfo = getAuthInfoFromCookie(request);
@@ -30,9 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // 验证旧密码
+    if (!oldPassword || typeof oldPassword !== 'string') {
+      return NextResponse.json({ error: '旧密码不得为空' }, { status: 400 });
+    }
+
     // 验证新密码
     if (!newPassword || typeof newPassword !== 'string') {
       return NextResponse.json({ error: '新密码不得为空' }, { status: 400 });
+    }
+
+    if (newPassword.length < 6) {
+      return NextResponse.json({ error: '新密码至少 6 位' }, { status: 400 });
+    }
+
+    if (newPassword === oldPassword) {
+      return NextResponse.json({ error: '新密码不得与旧密码相同' }, { status: 400 });
     }
 
     const username = authInfo.username;
@@ -43,6 +56,12 @@ export async function POST(request: NextRequest) {
         { error: '站长不能通过此接口修改密码' },
         { status: 403 }
       );
+    }
+
+    // 校验旧密码
+    const isValid = await db.verifyUser(username, oldPassword);
+    if (!isValid) {
+      return NextResponse.json({ error: '旧密码错误' }, { status: 401 });
     }
 
     // 修改密码

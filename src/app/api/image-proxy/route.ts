@@ -107,6 +107,15 @@ export async function GET(request: Request) {
 
     const contentType = imageResponse.headers.get('content-type');
 
+    // 安全检查：只转发真正的图片，避免上游返回 HTML 时在本站域名下被当作页面执行
+    if (!contentType || !contentType.trim().toLowerCase().startsWith('image/')) {
+      imageResponse.body?.cancel();
+      return NextResponse.json(
+        { error: 'Upstream response is not an image' },
+        { status: 415 }
+      );
+    }
+
     if (!imageResponse.body) {
       return NextResponse.json(
         { error: 'Image response has no body' },
@@ -119,6 +128,8 @@ export async function GET(request: Request) {
     if (contentType) {
       headers.set('Content-Type', contentType);
     }
+    // 防止浏览器 MIME 类型嗅探，强制使用声明的 Content-Type
+    headers.set('X-Content-Type-Options', 'nosniff');
 
     // 传递Content-Length以支持进度显示和更好的缓存（如果上游提供）
     const contentLength = imageResponse.headers.get('content-length');

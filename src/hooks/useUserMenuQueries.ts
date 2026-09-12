@@ -251,11 +251,11 @@ export function useFavoritesQuery({ enabled }: UseFavoritesQueryOptions) {
  */
 export function useChangePasswordMutation() {
   return useMutation({
-    mutationFn: async (newPassword: string) => {
+    mutationFn: async ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
       const response = await fetch('/api/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newPassword }),
+        body: JSON.stringify({ oldPassword, newPassword }),
       });
 
       const data = await response.json();

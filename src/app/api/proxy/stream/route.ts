@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   }
 
   const ua = liveSource.ua || 'AptvPlayer/1.4.10';
-  const decodedUrl = decodeURIComponent(url);
+  const decodedUrl = url;
 
   // SSRF 防护：验证目标 URL
   try {

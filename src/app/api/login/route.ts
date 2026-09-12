@@ -60,6 +60,20 @@ async function recordLoginFailure(ip: string): Promise<void> {
   }
 }
 
+// 判断当前请求是否走 HTTPS，用于决定 Cookie 的 Secure 属性
+// 仅在确定为 https 时才置为 true，http 部署保持原有行为，避免 Cookie 被浏览器丢弃
+function isHttpsRequest(req: NextRequest): boolean {
+  const forwardedProto = req.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (forwardedProto) {
+    return forwardedProto === 'https';
+  }
+  return req.nextUrl.protocol === 'https:';
+}
+
 // 生成签名
 async function generateSignature(
   data: string,
@@ -114,6 +128,7 @@ async function generateAuthCookie(
 }
 
 export async function POST(req: NextRequest) {
+  const useSecureCookie = isHttpsRequest(req);
   const clientIP = getClientIP(req);
   if (await isLoginRateLimited(clientIP)) {
     return NextResponse.json(
@@ -137,7 +152,7 @@ export async function POST(req: NextRequest) {
           expires: new Date(0),
           sameSite: 'lax', // 改为 lax 以支持 PWA
           httpOnly: false, // PWA 需要客户端可访问
-          secure: false, // 根据协议自动设置
+          secure: useSecureCookie, // 仅 HTTPS 下启用 Secure
         });
 
         return response;

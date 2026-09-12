@@ -66,6 +66,16 @@ function VersionDisplay() {
   );
 }
 
+// 仅允许跳回站内地址，避免 ?redirect= 被用作开放重定向
+function sanitizeRedirect(target: string | null): string {
+  if (!target) return '/';
+  // 必须是以单个 / 开头的站内路径（排除 //evil.com 与 /\\evil.com 这类协议相对地址）
+  if (!target.startsWith('/') || target.startsWith('//') || target.startsWith('/\\')) {
+    return '/';
+  }
+  return target;
+}
+
 function LoginPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -187,13 +197,11 @@ function LoginPageClient() {
           // 登入时间记录失败不影响正常登录流程
         }
 
-        const redirect = searchParams.get('redirect') || '/';
+        const redirect = sanitizeRedirect(searchParams.get('redirect'));
         router.replace(redirect);
-      } else if (res.status === 401) {
-        setError('密码错误');
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? '服务器错误');
+        setError(data.error ?? (res.status === 401 ? '密码错误' : '服务器错误'));
       }
     } catch (error) {
       setError('网络错误，请稍后重试');

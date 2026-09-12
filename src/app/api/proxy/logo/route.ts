@@ -94,7 +94,9 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
-  const source = searchParams.get('source'); // 注意这里是 'source' 不是 'moontv-source'
+  // 客户端传的是 source，其他代理接口用的是 moontv-source，这里两者都接受
+  const source =
+    searchParams.get('moontv-source') || searchParams.get('source');
 
   if (!imageUrl) {
     logoStats.errors++;
@@ -232,6 +234,8 @@ export async function GET(request: Request) {
     headers.set('X-Cache', 'MISS');
     headers.set('Content-Length', imageData.byteLength.toString());
     headers.set('Vary', 'Accept-Encoding');
+    // 防止浏览器 MIME 类型嗅探，强制使用声明的 Content-Type
+    headers.set('X-Content-Type-Options', 'nosniff');
     
     if (etag) {
       headers.set('ETag', etag);

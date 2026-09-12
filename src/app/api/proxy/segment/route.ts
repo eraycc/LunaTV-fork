@@ -70,7 +70,7 @@ export async function GET(request: Request) {
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
   try {
-    const decodedUrl = decodeURIComponent(url);
+    const decodedUrl = url;
     const isHttps = decodedUrl.startsWith('https:');
     const agent = isHttps ? httpsAgent : httpAgent;
 

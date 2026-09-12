@@ -1654,8 +1654,8 @@ function PlayPageClient() {
 
   // 完整测速（桌面设备）
   const fullSpeedTest = async (sources: SearchResult[], weights: Record<string, number> = {}): Promise<SearchResult> => {
-    // 桌面设备使用小批量并发，避免创建过多实例（降低并发数提高稳定性）
-    const concurrency = 2;
+    // 固定并发数测速，避免源数量多时同时创建大量 hls 实例拖垮设备
+    const MAX_CONCURRENT_TEST = 4;
     // 限制最大测试数量为20个源（平衡速度和覆盖率）
     const maxTestCount = 20;
     const topPriorityCount = 5; // 前5个优先级最高的源（已按权重排序）
@@ -1682,82 +1682,53 @@ function PlayPageClient() {
     const allResults: Array<{
       source: SearchResult;
       testResult: VideoSourceTestResult;
-    } | null> = [];
+    } | null> = new Array(sourcesToTest.length).fill(null);
 
     let shouldStop = false; // 早停标志
-    let testedCount = 0; // 已测试数量
 
-    for (let i = 0; i < sourcesToTest.length && !shouldStop; i += concurrency) {
-      const batch = sourcesToTest.slice(i, i + concurrency);
-      console.log(`测速批次 ${Math.floor(i/concurrency) + 1}/${Math.ceil(sourcesToTest.length/concurrency)}: ${batch.length} 个源`);
+    const testOne = async (index: number) => {
+      if (shouldStop) return;
 
-      const batchResults = await Promise.all(
-        batch.map(async (source, batchIndex) => {
-          try {
-            // 更新进度：显示当前正在测试的源
-            const currentIndex = i + batchIndex + 1;
-            setSpeedTestProgress({
-              current: currentIndex,
-              total: sourcesToTest.length,
-              currentSource: source.source_name,
-            });
+      const source = sourcesToTest[index];
+      try {
+        // 更新进度：显示当前正在测试的源
+        setSpeedTestProgress({
+          current: index + 1,
+          total: sourcesToTest.length,
+          currentSource: source.source_name,
+        });
 
-            if (!source.episodes || source.episodes.length === 0) {
-              return null;
-            }
+        if (!source.episodes || source.episodes.length === 0) {
+          return;
+        }
 
-            const episodeUrl = source.episodes.length > 1
-              ? source.episodes[1]
-              : source.episodes[0];
+        const episodeUrl = source.episodes.length > 1
+          ? source.episodes[1]
+          : source.episodes[0];
 
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
-              timeoutMs: 9000,
-            });
+        const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
+          timeoutMs: 9000,
+        });
 
-            // 更新进度：显示测试结果
-            setSpeedTestProgress({
-              current: currentIndex,
-              total: sourcesToTest.length,
-              currentSource: source.source_name,
-              result: `${testResult.quality} | ${testResult.loadSpeed} | ${testResult.pingTime}ms`,
-            });
+        // 更新进度：显示测试结果
+        setSpeedTestProgress({
+          current: index + 1,
+          total: sourcesToTest.length,
+          currentSource: source.source_name,
+          result: `${testResult.quality} | ${testResult.loadSpeed} | ${testResult.pingTime}ms`,
+        });
 
-            return { source, testResult };
-          } catch (error) {
-            console.warn(`测速失败: ${source.source_name}`, error);
+        allResults[index] = { source, testResult };
 
-            // 更新进度：显示失败
-            const currentIndex = i + batchIndex + 1;
-            setSpeedTestProgress({
-              current: currentIndex,
-              total: sourcesToTest.length,
-              currentSource: source.source_name,
-              result: '测速失败',
-            });
-
-            return null;
-          }
-        })
-      );
-
-      allResults.push(...batchResults);
-      testedCount += batch.length;
-
-      // 🎯 保守策略早停判断：找到高质量源
-      const successfulInBatch = batchResults.filter(Boolean) as Array<{
-        source: SearchResult;
-        testResult: VideoSourceTestResult;
-      }>;
-
-      for (const result of successfulInBatch) {
-        const { quality, speedKBps } = result.testResult;
+        // 🎯 保守策略早停判断：找到高质量源
+        const { quality, speedKBps } = testResult;
 
         // 优先使用 speedKBps 字段，降级到解析 loadSpeed
         let speedMBps = 0;
         if (speedKBps && Number.isFinite(speedKBps) && speedKBps > 0) {
           speedMBps = speedKBps / 1024;
         } else {
-          const speedMatch = result.testResult.loadSpeed.match(/^([\d.]+)\s*MB\/s$/);
+          const speedMatch = testResult.loadSpeed.match(/^([\d.]+)\s*MB\/s$/);
           speedMBps = speedMatch ? parseFloat(speedMatch[1]) : 0;
         }
 
@@ -1766,17 +1737,39 @@ function PlayPageClient() {
         const is2KHighSpeed = quality === '2K' && speedMBps >= 6;
 
         if (is4KHighSpeed || is2KHighSpeed) {
-          console.log(`✓ 找到顶级优质源: ${result.source.source_name} (${quality}, ${result.testResult.loadSpeed})，停止测速`);
+          console.log(`✓ 找到顶级优质源: ${source.source_name} (${quality}, ${testResult.loadSpeed})，停止测速`);
           shouldStop = true;
-          break;
+        }
+      } catch (error) {
+        console.warn(`测速失败: ${source.source_name}`, error);
+
+        // 更新进度：显示失败
+        setSpeedTestProgress({
+          current: index + 1,
+          total: sourcesToTest.length,
+          currentSource: source.source_name,
+          result: '测速失败',
+        });
+
+        allResults[index] = null;
+      }
+    };
+
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(MAX_CONCURRENT_TEST, sourcesToTest.length) },
+      async () => {
+        while (cursor < sourcesToTest.length && !shouldStop) {
+          const current = cursor++;
+          await testOne(current);
+          // 任务间延迟，让资源有时间清理
+          if (cursor < sourcesToTest.length && !shouldStop) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
         }
       }
-
-      // 批次间延迟，让资源有时间清理（减少延迟时间）
-      if (i + concurrency < sourcesToTest.length && !shouldStop) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
+    );
+    await Promise.all(workers);
 
     // 等待所有测速完成，包含成功和失败的结果
     // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
@@ -2108,7 +2101,8 @@ function PlayPageClient() {
       if (!hls || hls.audioTrack === track.hlsIndex) return;
 
       try {
-        hls.audioTrack = track.hlsIndex;
+        // v1.7.0: nextAudioTrack 走调度式切换，避免 hls.audioTrack 直接赋值造成的卡顿/直播延迟增加
+        hls.nextAudioTrack = track.hlsIndex;
         setCurrentAudioTrack(track.hlsIndex);
         savePreferredAudioLang(track.language);
       } catch (error) {
@@ -4488,6 +4482,9 @@ function PlayPageClient() {
               liveDurationInfinity: false, // 避免无限缓冲 (官方默认false)
               liveBackBufferLength: isMobile ? (localIsIOS13 ? 3 : 5) : null, // 已废弃，保持兼容
 
+              // v1.7.0 新增：appendBuffer 卡死超时兜底，避免个别设备 SourceBuffer 无响应导致播放静默卡住不报错
+              appendTimeout: isMobile ? 8000 : 10000,
+
               /* 高级优化配置 - 参考 StreamControllerConfig */
               maxMaxBufferLength: isMobile ? (localIsIOS13 ? 60 : 120) : 600, // 最大缓冲长度限制
               maxFragLookUpTolerance: isMobile ? 0.1 : 0.25, // 片段查找容忍度
@@ -4568,7 +4565,7 @@ function PlayPageClient() {
                   t => normalizeAudioLang(t.language) === preferredLang
                 );
                 if (preferredTrack && typeof preferredTrack.hlsIndex === 'number' && preferredTrack.hlsIndex !== activeHlsIndex) {
-                  hls.audioTrack = preferredTrack.hlsIndex;
+                  hls.nextAudioTrack = preferredTrack.hlsIndex;
                 }
               }
             });
@@ -5741,10 +5738,6 @@ function PlayPageClient() {
         }
       });
 
-      artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
-      });
-
       // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
         requestWakeLock();
@@ -5996,8 +5989,10 @@ function PlayPageClient() {
         }
       });
 
-      // 监听视频播放结束事件，自动播放下一集
+      // 监听视频播放结束事件：释放 Wake Lock 并自动播放下一集
       artPlayerRef.current.on('video:ended', () => {
+        releaseWakeLock();
+
         const idx = currentEpisodeIndexRef.current;
 
         // 🔥 关键修复：首先检查这个 video:ended 事件是否已经被处理过
@@ -6049,18 +6044,6 @@ function PlayPageClient() {
         if (saveNow - lastSaveTimeRef.current > interval && !isNearEnd) {
           saveCurrentPlayProgress();
           lastSaveTimeRef.current = saveNow;
-        }
-      });
-
-      artPlayerRef.current.on('pause', () => {
-        // 🔥 关键修复：暂停时也检查是否在片尾，避免保存错误的进度
-        const currentTime = artPlayerRef.current?.currentTime || 0;
-        const duration = artPlayerRef.current?.duration || 0;
-        const remainingTime = duration - currentTime;
-        const isNearEnd = duration > 0 && remainingTime < 180; // 最后3分钟
-
-        if (!isNearEnd) {
-          saveCurrentPlayProgress();
         }
       });
 

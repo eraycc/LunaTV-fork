@@ -97,7 +97,7 @@ export async function GET(request: Request) {
     ua = liveSource.ua || ua;
   }
 
-  const decodedUrl = decodeURIComponent(url);
+  const decodedUrl = url;
   const cacheKey = `${source}-${decodedUrl}`;
   
   // 检查缓存

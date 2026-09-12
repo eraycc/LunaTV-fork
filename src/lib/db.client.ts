@@ -213,14 +213,15 @@ class HybridCacheManager {
 
     try {
       // 检查缓存大小，超过15MB时清理旧数据
-      const cacheSize = JSON.stringify(cache).length;
-      if (cacheSize > 15 * 1024 * 1024) {
+      let serialized = JSON.stringify(cache);
+      if (serialized.length > 15 * 1024 * 1024) {
         console.warn('缓存过大，清理旧数据');
         this.cleanOldCache(cache);
+        serialized = JSON.stringify(cache);
       }
 
       const cacheKey = this.getUserCacheKey(username);
-      localStorage.setItem(cacheKey, JSON.stringify(cache));
+      localStorage.setItem(cacheKey, serialized);
     } catch (error) {
       console.warn('保存用户缓存失败:', error);
       // 存储空间不足时清理缓存后重试
