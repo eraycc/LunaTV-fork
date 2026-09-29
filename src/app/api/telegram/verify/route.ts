@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+import { generateAuthCookie, generateSignature } from '@/lib/auth';
 import { getTelegramToken, verifyAndConsumeTelegramToken } from '@/lib/telegram-tokens';
 import { db } from '@/lib/db';
 import { clearConfigCache, getConfig } from '@/lib/config';
@@ -19,48 +20,6 @@ function generatePassword(length = 8): string {
   }
 
   return password;
-}
-
-// 生成签名
-async function generateSignature(
-  data: string,
-  secret: string
-): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign('HMAC', key, messageData);
-
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// 生成认证Cookie（带签名）
-async function generateAuthCookie(
-  username: string,
-  role: 'owner' | 'admin' | 'user' = 'user'
-): Promise<string> {
-  const authData: Record<string, any> = { role };
-
-  if (username && process.env.PASSWORD) {
-    authData.username = username;
-    const signature = await generateSignature(username, process.env.PASSWORD);
-    authData.signature = signature;
-    authData.timestamp = Date.now();
-    authData.loginTime = Date.now();
-  }
-
-  return encodeURIComponent(JSON.stringify(authData));
 }
 
 export async function GET(request: Request) {

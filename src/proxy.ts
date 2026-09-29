@@ -2,7 +2,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  getLocalPasswordHash,
+  verifyLocalPasswordHash,
+} from '@/lib/auth';
 
 // 信任网络配置缓存（从 API 获取）
 let trustedNetworkCache: { enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null = null;
@@ -192,16 +196,16 @@ function isIPTrusted(clientIP: string, trustedIPs: string[]): boolean {
 }
 
 // 生成信任网络的自动登录 cookie
-function generateTrustedAuthCookie(request: NextRequest): NextResponse {
+async function generateTrustedAuthCookie(request: NextRequest): Promise<NextResponse> {
   const response = NextResponse.next();
 
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
   const username = process.env.USERNAME || 'admin';
 
   if (storageType === 'localstorage') {
-    // localstorage 模式：设置密码 cookie
+    // localstorage 模式：设置密码哈希 cookie（不存明文）
     const authInfo = {
-      password: process.env.PASSWORD,
+      password: await getLocalPasswordHash(),
       loginTime: Date.now(),
     };
     response.cookies.set('user_auth', JSON.stringify(authInfo), {
@@ -301,7 +305,7 @@ async function handleAuthentication(
         }
 
         // 没有认证 cookie，自动生成并设置
-        return generateTrustedAuthCookie(request);
+        return await generateTrustedAuthCookie(request);
       }
     }
   }
@@ -331,7 +335,7 @@ async function handleAuthentication(
 
   // localstorage模式：在middleware中完成验证
   if (storageType === 'localstorage') {
-    if (!authInfo.password || authInfo.password !== process.env.PASSWORD) {
+    if (!authInfo.password || !(await verifyLocalPasswordHash(authInfo.password))) {
       return handleAuthFailure(request, pathname);
     }
     return response || NextResponse.next();

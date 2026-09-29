@@ -9,6 +9,7 @@ import { Heart, Menu, Radio, RefreshCw, Search, Tv, X, ChevronDown, ChevronUp } 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Tabs, Tab, Box } from '@mui/material';
 
+import OptimizedHlsLoader from '@/lib/hls-loader';
 import {
   debounce,
 } from '@/lib/channel-search';
@@ -1644,45 +1645,6 @@ function LivePageClient() {
     }
   }, [selectedGroup, groupedChannels]);
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 所有的请求都带一个 source 参数
-        // 代理返回的播放列表使用站内相对地址，这里补上 origin 再解析
-        try {
-          const url = new URL(context.url, window.location.origin);
-          url.searchParams.set('moontv-source', currentSourceRef.current?.key || '');
-          context.url = url.toString();
-        } catch (error) {
-          // ignore
-        }
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          // 判断是否浏览器直连
-          const isLiveDirectConnectStr = localStorage.getItem('liveDirectConnect');
-          const isLiveDirectConnect = isLiveDirectConnectStr === 'true';
-          if (isLiveDirectConnect) {
-            // 浏览器直连，使用 URL 对象处理参数
-            try {
-              const url = new URL(context.url, window.location.origin);
-              url.searchParams.set('allowCORS', 'true');
-              context.url = url.toString();
-            } catch (error) {
-              // 如果 URL 解析失败，回退到字符串拼接
-              context.url = context.url + '&allowCORS=true';
-            }
-          }
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
-      };
-    }
-  }
 
   // 错误重试状态管理
   let keyLoadErrorCount = 0;
@@ -1782,8 +1744,18 @@ function LivePageClient() {
           }
         }
       }),
-      
-      loader: CustomHlsJsLoader,
+
+      /* 优化的 HLS Loader：直连模式 + 源标识 + 并发分片预取 */
+      loader: class extends OptimizedHlsLoader {
+        constructor(config: any) {
+          super({
+            ...config,
+            filterAds: false,
+            enableDirectConnect: localStorage.getItem('liveDirectConnect') === 'true',
+            sourceKey: currentSourceRef.current?.key || '',
+          });
+        }
+      },
     };
 
     const hls = new Hls(hlsConfig);

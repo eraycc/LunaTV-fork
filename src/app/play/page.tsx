@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { useDownload } from '@/contexts/DownloadContext';
 import { normalizeDownloadSource } from '@/lib/download';
 import { useDanmu } from '@/hooks/useDanmu';
+import OptimizedHlsLoader from '@/lib/hls-loader';
 import type { DanmuManualOverride } from '@/hooks/useDanmu';
 import DownloadEpisodeSelector from '@/components/download/DownloadEpisodeSelector';
 import DanmuManualMatchModal, { type DanmuManualSelection } from '@/components/DanmuManualMatchModal';
@@ -2787,36 +2788,6 @@ function PlayPageClient() {
     }
   };
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any
-          ) {
-            // 如果是m3u8文件，处理内容以移除广告分段
-            if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
-      };
-    }
-  }
-
 
   // 🚀 优化的集数变化处理（防抖 + 状态保护）
   useEffect(() => {
@@ -4516,9 +4487,18 @@ function PlayPageClient() {
                 },
               },
 
-              /* 自定义loader */
+              /* 优化的 HLS Loader：广告过滤 + 并发分片预取 */
               loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
+                ? class extends OptimizedHlsLoader {
+                    constructor(config: any) {
+                      super({
+                        ...config,
+                        filterAds: true,
+                        enableDirectConnect: false,
+                        sourceKey: '',
+                      });
+                    }
+                  }
                 : Hls.DefaultConfig.loader,
             });
 

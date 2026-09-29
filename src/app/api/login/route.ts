@@ -1,6 +1,7 @@
 /* eslint-disable no-console,@typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 
+import { generateAuthCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
@@ -74,58 +75,8 @@ function isHttpsRequest(req: NextRequest): boolean {
   return req.nextUrl.protocol === 'https:';
 }
 
-// 生成签名
-async function generateSignature(
-  data: string,
-  secret: string
-): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-
-  // 导入密钥
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  // 生成签名
-  const signature = await crypto.subtle.sign('HMAC', key, messageData);
-
-  // 转换为十六进制字符串
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// 生成认证Cookie（带签名）
-async function generateAuthCookie(
-  username?: string,
-  password?: string,
-  role?: 'owner' | 'admin' | 'user',
-  includePassword = false
-): Promise<string> {
-  const authData: any = { role: role || 'user' };
-
-  // 只在需要时包含 password
-  if (includePassword && password) {
-    authData.password = password;
-  }
-
-  if (username && process.env.PASSWORD) {
-    authData.username = username;
-    // 使用密码作为密钥对用户名进行签名
-    const signature = await generateSignature(username, process.env.PASSWORD);
-    authData.signature = signature;
-    authData.timestamp = Date.now(); // 添加时间戳防重放攻击
-    authData.loginTime = Date.now(); // 添加登入时间记录
-  }
-
-  return encodeURIComponent(JSON.stringify(authData));
-}
+// generateSignature / generateAuthCookie 统一使用 @/lib/auth 中的实现
+// （cookie 不存明文密码，改存 HMAC 哈希）
 
 export async function POST(req: NextRequest) {
   const useSecureCookie = isHttpsRequest(req);
@@ -175,10 +126,10 @@ export async function POST(req: NextRequest) {
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(
         undefined,
-        password,
         'user',
+        password,
         true
-      ); // localstorage 模式包含 password
+      ); // localstorage 模式包含 password 哈希（非明文）
       const expires = new Date();
       expires.setDate(expires.getDate() + 7); // 7天过期
 
@@ -187,7 +138,7 @@ export async function POST(req: NextRequest) {
         expires,
         sameSite: 'lax', // 改为 lax 以支持 PWA
         httpOnly: false, // PWA 需要客户端可访问
-        secure: false, // 根据协议自动设置
+        secure: useSecureCookie, // 仅 HTTPS 下启用 Secure
       });
 
       return response;
@@ -212,8 +163,8 @@ export async function POST(req: NextRequest) {
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(
         username,
-        password,
         'owner',
+        password,
         false
       ); // 数据库模式不包含 password
       const expires = new Date();
@@ -224,7 +175,7 @@ export async function POST(req: NextRequest) {
         expires,
         sameSite: 'lax', // 改为 lax 以支持 PWA
         httpOnly: false, // PWA 需要客户端可访问
-        secure: false, // 根据协议自动设置
+        secure: useSecureCookie, // 仅 HTTPS 下启用 Secure
       });
 
       return response;
@@ -255,8 +206,8 @@ export async function POST(req: NextRequest) {
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(
         username,
-        password,
         user?.role || 'user',
+        password,
         false
       );
       const expires = new Date();
@@ -267,7 +218,7 @@ export async function POST(req: NextRequest) {
         expires,
         sameSite: 'lax',
         httpOnly: false,
-        secure: false,
+        secure: useSecureCookie,
       });
 
       return response;

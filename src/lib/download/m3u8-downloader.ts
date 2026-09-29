@@ -422,12 +422,63 @@ export function aesDecrypt(data: ArrayBuffer, key: any, iv: string): ArrayBuffer
   return typedArray.buffer;
 }
 
+/** 大于此大小的片段才启用 Range 分块下载（字节） */
+const RANGE_CHUNK_THRESHOLD = 512 * 1024;
+/** 单个片段分块数 */
+const RANGE_CHUNK_COUNT = 4;
+
+/** 按 Range 并发分块下载一个完整片段，合并后返回 */
+async function downloadByRanges(
+  url: string,
+  totalSize: number,
+  headers: HeadersInit,
+  signal: AbortSignal,
+  timeout: number
+): Promise<ArrayBuffer> {
+  const chunkSize = Math.ceil(totalSize / RANGE_CHUNK_COUNT);
+  const tasks: Promise<{ index: number; data: ArrayBuffer }>[] = [];
+  for (let i = 0; i < RANGE_CHUNK_COUNT; i++) {
+    const start = i * chunkSize;
+    if (start >= totalSize) break;
+    const end = Math.min(start + chunkSize - 1, totalSize - 1);
+    tasks.push(
+      (async () => {
+        const chunkController = new AbortController();
+        const onAbort = () => chunkController.abort();
+        signal.addEventListener('abort', onAbort);
+        const timeoutId = setTimeout(() => chunkController.abort(), timeout);
+        try {
+          const resp = await fetch(url, {
+            signal: chunkController.signal,
+            headers: { ...(headers as Record<string, string>), Range: `bytes=${start}-${end}` },
+          });
+          // 必须是 206，否则说明源站忽略了 Range（会返回完整文件，导致拼接错误）
+          if (resp.status !== 206) throw new Error('Range not supported');
+          return { index: i, data: await resp.arrayBuffer() };
+        } finally {
+          clearTimeout(timeoutId);
+          signal.removeEventListener('abort', onAbort);
+        }
+      })()
+    );
+  }
+  const results = await Promise.all(tasks);
+  const merged = new Uint8Array(totalSize);
+  let offset = 0;
+  results.sort((a, b) => a.index - b.index);
+  for (const r of results) {
+    merged.set(new Uint8Array(r.data), offset);
+    offset += r.data.byteLength;
+  }
+  return merged.buffer;
+}
+
 /**
  * 下载单个 TS 片段
  * @param url 片段 URL
  * @param signal AbortSignal
  * @param requestHeaders 请求头
- * @param byteRange 字节范围（可选）
+ * @param byteRange 字节范围（可选，BYTERANGE 场景，与 Range 分块下载互斥）
  * @param timeout 超时时间（毫秒），默认 45000ms
  */
 export async function downloadTsSegment(
@@ -465,6 +516,49 @@ export async function downloadTsSegment(
     : controller.signal;
 
   try {
+    // BYTERANGE 场景已经占用了 Range 头，不能再叠加分块下载，走整段逻辑
+    if (!byteRange) {
+      // 1) 探测文件大小。注意：不支持 Range 的源会忽略请求头、返回 200 + 完整文件，
+      //    此时 probe 本身就是完整片段，必须直接返回——否则会白白下载一遍再整段重下，
+      //    等于每个片段下载两遍。
+      let totalSize = 0;
+      try {
+        const probe = await fetch(url, {
+          signal: combinedSignal,
+          headers: { ...(headers as Record<string, string>), Range: 'bytes=0-0' },
+        });
+        if (probe.status === 206) {
+          const cr = probe.headers.get('Content-Range');
+          const m = cr?.match(/\/(\d+)$/);
+          if (m) totalSize = parseInt(m[1], 10);
+          // 消费探测响应 body（1 字节），避免连接泄漏
+          await probe.arrayBuffer().catch(() => undefined);
+        } else if (probe.ok) {
+          // 源站不支持 Range：这个响应就是完整片段，直接用，不再重复下载
+          clearTimeout(timeoutId);
+          const buffer = await probe.arrayBuffer();
+          console.log('[downloadTsSegment] 源站不支持 Range，直接使用完整响应，大小:', buffer.byteLength, 'bytes');
+          return buffer;
+        }
+      } catch (probeError) {
+        if (combinedSignal.aborted) throw probeError;
+        // 探测失败，走整段下载兜底
+      }
+
+      // 2) 大片段分块下载；失败回退整段
+      if (totalSize > RANGE_CHUNK_THRESHOLD) {
+        try {
+          const buffer = await downloadByRanges(url, totalSize, headers, combinedSignal, timeout);
+          clearTimeout(timeoutId);
+          console.log('[downloadTsSegment] 分块下载成功，大小:', buffer.byteLength, 'bytes');
+          return buffer;
+        } catch (rangeError) {
+          if (combinedSignal.aborted) throw rangeError;
+          // 分块失败（如 Range 未生效），回退整段下载
+        }
+      }
+    }
+
     console.log('[downloadTsSegment] 发起 fetch 请求...');
     const response = await fetch(url, { signal: combinedSignal, headers });
     clearTimeout(timeoutId);
